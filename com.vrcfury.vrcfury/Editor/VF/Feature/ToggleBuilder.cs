@@ -561,6 +561,8 @@ public class ToggleBuilder : FeatureBuilder<Toggle> {
         var globalParamProp = prop.FindPropertyRelative("globalParam");
         var holdButtonProp = prop.FindPropertyRelative("holdButton");
 
+        var condistionsProp = prop.FindPropertyRelative("condition");
+
         var flex = new VisualElement {
             style = {
                 flexDirection = FlexDirection.Row,
@@ -572,6 +574,9 @@ public class ToggleBuilder : FeatureBuilder<Toggle> {
         var name = VRCFuryEditorUtils.Prop(prop.FindPropertyRelative("name"), "Menu Path", tooltip: menuPathTooltip);
         name.style.flexGrow = 1;
         flex.Add(name);
+
+        var con = VRCFuryEditorUtils.Prop(prop.FindPropertyRelative("condition"), "Conditions");
+        content.Add(con);
 
         var button = VRCFuryEditorUtils.Button("Options", () => {
             var advMenu = new GenericMenu();

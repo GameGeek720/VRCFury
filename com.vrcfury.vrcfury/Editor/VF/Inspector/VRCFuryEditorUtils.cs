@@ -23,7 +23,8 @@ public static class VRCFuryEditorUtils {
         SerializedProperty list,
         Func<int, SerializedProperty, VisualElement> renderElement = null,
         Action onPlus = null,
-        Func<VisualElement> onEmpty = null
+        Func<VisualElement> onEmpty = null,
+        string inBetween = null
     ) {
         if (list == null) {
             return new Label("List is null");
@@ -45,6 +46,17 @@ public static class VRCFuryEditorUtils {
             var size = list.arraySize;
             var refreshAllElements = new List<Action>();
             for (var i = 0; i < size; i++) {
+                if (inBetween != null && inBetween != "" && i != 0) {
+                    var inBetweenRow = new VisualElement();
+                    inBetweenRow.AddToClassList("vfListRow");
+                    inBetweenRow.style.unityTextAlign = TextAnchor.MiddleCenter;
+                    inBetweenRow.style.paddingTop = 5;
+                    inBetweenRow.style.paddingBottom = 5;
+                    inBetweenRow.style.borderBottomWidth = 1;
+                    inBetweenRow.style.borderBottomColor = Color.black;
+                    inBetweenRow.Add(WrappedLabel(inBetween));
+                    entries.Add(inBetweenRow);
+                }
                 var offset = i;
                 var el = list.GetArrayElementAtIndex(i);
                 var row = new VisualElement {
@@ -335,10 +347,23 @@ public static class VRCFuryEditorUtils {
                     break;
                 }
                 case SerializedPropertyType.Generic: {
-                    if (prop.type == "State") {
-                        return VRCFuryStateEditor.render(prop, label, labelWidth, tooltip);
+                    switch(prop.type) {
+                        case "State":
+                            return VRCFuryStateEditor.render(prop, label, labelWidth, tooltip);
+                        case "Condition":
+                            return VRCFuryConditionEditor.render(prop, label, labelWidth, tooltip);
                     }
-
+                    break;
+                }
+                case SerializedPropertyType.ManagedReference: {
+                    switch(prop.type) {
+                        case "managedReference<AndCondition>":
+                            return VRCFuryConditionEditor.renderAnd(prop, label, labelWidth, tooltip);
+                        case "managedReference<MenuTrigger>":
+                        case "managedReference<GlobalTrigger>":
+                        case "managedReference<GestureTrigger>":
+                            return VRCFuryConditionEditor.renderTrigger(prop, label, labelWidth, tooltip);
+                    }
                     break;
                 }
             }

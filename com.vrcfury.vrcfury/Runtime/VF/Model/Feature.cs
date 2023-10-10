@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using UnityEngine;
 using VF.Component;
+using VF.Model.Conditions;
 using VF.Model.StateAction;
 using VF.Upgradeable;
 using VRC.SDK3.Avatars.Components;
@@ -268,6 +269,8 @@ namespace VF.Model.Feature {
         public bool useGlobalParam;
         public string globalParam;
         public bool holdButton;
+
+        public Condition condition = new Condition();
 
         public override void CreateNewInstance(GameObject obj) {
             var n = obj.AddComponent<VRCFuryToggle>();
