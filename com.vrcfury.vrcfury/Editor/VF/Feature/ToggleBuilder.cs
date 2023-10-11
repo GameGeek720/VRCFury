@@ -11,6 +11,7 @@ using VF.Feature.Base;
 using VF.Injector;
 using VF.Inspector;
 using VF.Model;
+using VF.Model.Conditions;
 using VF.Model.StateAction;
 using VF.Service;
 using VF.Utils;
@@ -143,7 +144,7 @@ public class ToggleBuilder : FeatureBuilder<Toggle> {
                 foreach (var toggle in allBuildersInRun
                             .OfType<ToggleBuilder>()) {
 
-                    if (!toggle.model.exclusiveOffState && toggle.GetExclusiveTags().Contains(exclusiveTag)) {
+                    if (!toggle.model.exclusiveOffState && toggle.GetName().Item3 && toggle.GetExclusiveTags().Contains(exclusiveTag)) {
                         tagCount++;
                     }
                 }
@@ -180,7 +181,7 @@ public class ToggleBuilder : FeatureBuilder<Toggle> {
             if (!model.exclusiveOffState && toggle == this) {
                 tagIndex = tagCount;
             }
-            if (!toggle.model.exclusiveOffState && toggle.GetPrimaryExclusive() == targetTag) {
+            if (!toggle.model.exclusiveOffState && toggle.GetName().Item3 && toggle.GetPrimaryExclusive() == targetTag) {
                 tagCount++;
             }
         }
@@ -194,39 +195,145 @@ public class ToggleBuilder : FeatureBuilder<Toggle> {
             intTarget = tagIndex;
         }
     }
-		
-    private (string,bool) GetParamName() {
+
+    private (string,bool,bool) GetName() {
         if (model.paramOverride != null) {
-            return (model.paramOverride, false);
+            return (model.paramOverride, false, false);
         }
-        if (model.useGlobalParam && !string.IsNullOrWhiteSpace(model.globalParam)) {
-            return (model.globalParam, false);
+        foreach (var or in model.condition.orConditions) {
+            foreach (var trig in or.andCondition) {
+                var menuTrigger = trig as MenuTrigger;
+                if (menuTrigger != null && !string.IsNullOrEmpty(menuTrigger.menuPath)) {
+                    return (menuTrigger.menuPath, model.usePrefixOnParam, true);
+                }
+            }
         }
-        return (model.name, model.usePrefixOnParam);
+        foreach (var or in model.condition.orConditions) {
+            foreach (var trig in or.andCondition) {
+                var gestrueTrigger = trig as GestureTrigger;
+                if (gestrueTrigger != null) {
+                    var temp = "Gesture ";
+                    if (gestrueTrigger.hand != GestureTrigger.Hand.COMBO) {
+                        temp += "Left = " + gestrueTrigger.sign + ", Right = " + gestrueTrigger.comboSign;
+                    } else {
+                        if (gestrueTrigger.hand != GestureTrigger.Hand.EITHER) temp += "Either = ";
+                        if (gestrueTrigger.hand != GestureTrigger.Hand.LEFT) temp += "Left = ";
+                        if (gestrueTrigger.hand != GestureTrigger.Hand.RIGHT) temp += "Right = ";
+
+                        temp += gestrueTrigger.sign;
+                    }
+                    return (temp, false, false);
+                }
+            }
+        }
+        foreach (var or in model.condition.orConditions) {
+            foreach (var trig in or.andCondition) {
+                var globalTrigger = trig as GlobalTrigger;
+                if (globalTrigger != null && !string.IsNullOrEmpty(globalTrigger.boolName)) {
+                    return (globalTrigger.boolName, false, false);
+                }
+            }
+        }
+        return (null, false, false);
+    }
+
+    private VFCondition GetOnCase(VFCondition menuCondition) {
+        var fx = GetFx();
+
+        VFCondition EvaluateTrigger(Trigger t) {
+            
+            var GestureLeft = fx.GestureLeft();
+            var GestureRight = fx.GestureRight();
+        
+            switch(t) {
+                case MenuTrigger mt:
+                    return menuCondition;
+                case GlobalTrigger gt:
+                    return fx.NewBool(gt.boolName, usePrefix: false).IsTrue();
+                case GestureTrigger gt:
+                    if (gt.hand == GestureTrigger.Hand.LEFT) {
+                        return GestureLeft.IsEqualTo((int)gt.sign);
+                    } else if (gt.hand == GestureTrigger.Hand.RIGHT) {
+                        return GestureRight.IsEqualTo((int)gt.sign);
+                    } else if (gt.hand == GestureTrigger.Hand.EITHER) {
+                        return GestureLeft.IsEqualTo((int)gt.sign).Or(GestureRight.IsEqualTo((int)gt.sign));
+                    } else if (gt.hand == GestureTrigger.Hand.COMBO) {
+                        return GestureLeft.IsEqualTo((int)gt.sign).And(GestureRight.IsEqualTo((int)gt.comboSign));
+                    }
+                return fx.Never();
+            }
+            return fx.Never();
+        }
+
+        List<AndCondition> usefulOrClauses = new List<AndCondition>();
+
+        foreach (var andClause in model.condition.orConditions) {
+            if (andClause.andCondition.Count() > 0) {
+                usefulOrClauses.Add(andClause);
+            }
+        }
+
+        var firstTrigger = usefulOrClauses.First().andCondition.First();
+        var output = EvaluateTrigger(firstTrigger);
+
+        foreach(var andTrigger in usefulOrClauses.First().andCondition.Skip(1)) {
+            output = output.And(EvaluateTrigger(andTrigger));
+        }
+
+        if (usefulOrClauses.First().andCondition.Any(trig => trig is GestureTrigger)) {
+            previousGestures.Add(output);
+            foreach (var con in previousGestures.Take(previousGestures.Count() - 1)) {
+                output = output.And(con.Not());
+            }
+            foreach (var tag in GetExclusiveTags()) {
+                var lockParam = fx.NewBool("VF_" + tag + "_Lock", usePrefix: false);
+                output = output.And(lockParam.IsFalse());
+            }
+        }
+
+        foreach (var orCond in usefulOrClauses.Skip(1)) {
+            var temp = EvaluateTrigger(orCond.andCondition.First());
+            foreach (var andTrigger in orCond.andCondition.Skip(1)) {
+                temp = temp.And(EvaluateTrigger(andTrigger));
+            }
+            if (orCond.andCondition.Any(trig => trig is GestureTrigger)) {
+                previousGestures.Add(temp);
+                foreach (var con in previousGestures.Take(previousGestures.Count() - 1)) {
+                    temp = temp.And(con.Not());
+                }
+                foreach (var tag in GetExclusiveTags()) {
+                    var lockParam = fx.NewBool("VF_" + tag + "_Lock", usePrefix: false);
+                    temp = temp.And(lockParam.IsFalse());
+                }
+            }
+            output = output.Or(temp);
+        }
+
+        return output;
     }
 
     private void CreateSlider() {
-        var fx = GetFx();
-        var layerName = model.name;
-        var layer = fx.NewLayer(layerName);
+        bool usePrefixOnParam;
+        (layerName, usePrefixOnParam, addMenuItem) = GetName();
 
-        var (paramName, usePrefixOnParam) = GetParamName();
+        var fx = GetFx();
+        var layer = fx.NewLayer(layerName);
 
         var off = layer.NewState("Off");
         var on = layer.NewState("On");
         var x = fx.NewFloat(
-            paramName,
+            layerName,
             synced: addMenuItem,
             saved: model.saved,
             def: model.defaultOn ? model.defaultSliderValue : 0,
             usePrefix: usePrefixOnParam
         );
 
-        var hasTitle = !string.IsNullOrEmpty(model.name);
+        var hasTitle = !string.IsNullOrEmpty(layerName);
         var hasIcon = model.enableIcon && model.icon?.Get() != null;
-        if (model.addMenuItem && (hasTitle || hasIcon)) {
+        if (addMenuItem && (hasTitle || hasIcon)) {
             manager.GetMenu().NewMenuSlider(
-                model.name,
+                layerName,
                 x,
                 icon: model.enableIcon ? model.icon?.Get() : null
             );
@@ -258,20 +365,20 @@ public class ToggleBuilder : FeatureBuilder<Toggle> {
         addMenuItem = model.addMenuItem;
         enableExclusiveTag = model.enableExclusiveTag || enableExclusiveTag;
 
+        if (model.condition.orConditions.Count() == 0 || !model.condition.orConditions.Any(orCond => orCond.andCondition.Count() > 0)) {
+            return;
+        }
+
         if (model.slider) {
             CreateSlider();
             return;
         }
+        bool usePrefixOnParam;
+        (layerName, usePrefixOnParam, addMenuItem) = GetName();
 
-        var physBoneResetter = physboneResetService.CreatePhysBoneResetter(model.resetPhysbones, model.name);
+        var physBoneResetter = physboneResetService.CreatePhysBoneResetter(model.resetPhysbones, layerName);
 
-        layerName = model.name;
-
-        var hasTitle = !string.IsNullOrEmpty(model.name);
         var hasIcon = model.enableIcon && model.icon?.Get() != null;
-
-        if (!hasTitle && model.useGlobalParam) layerName = model.globalParam;
-        if (!hasTitle && !hasIcon) addMenuItem = false;
 
         CheckHumanoidMask();
         CheckExclusives();
@@ -280,20 +387,57 @@ public class ToggleBuilder : FeatureBuilder<Toggle> {
         var layer = GetLayer(layerName);
         var off = GetOffState("Off", layer);
 
-        var (paramName, usePrefixOnParam) = GetParamName();
-        if (useInt) {
-            if (intTarget == -1) {
-                var numParam = fx.NewInt(paramName, synced: addMenuItem, saved: model.saved, def: model.defaultOn ? 1 : 0, usePrefix: usePrefixOnParam);
-                onCase = numParam.IsNotEqualTo(0);
+        VFCondition paramOnCase = null;
+        
+        if (layerName != null && addMenuItem) {
+            if (useInt) {
+                if (intTarget == -1) {
+                    var numParam = fx.NewInt(layerName, synced: true, saved: model.saved, def: model.defaultOn ? 1 : 0, usePrefix: usePrefixOnParam);
+                    paramOnCase = numParam.IsNotEqualTo(0);
+                } else {
+                    var numParam = fx.NewInt("VF_" + GetPrimaryExclusive() + "_Exclusives", synced: true, saved: model.saved, def: model.defaultOn ? intTarget : 0, usePrefix: false);
+                    paramOnCase = numParam.IsEqualTo(intTarget);
+                    param = numParam;
+                }
             } else {
-                var numParam = fx.NewInt("VF_" + GetPrimaryExclusive() + "_Exclusives", synced: addMenuItem, saved: model.saved, def: model.defaultOn ? intTarget : 0, usePrefix: false);
-                onCase = numParam.IsEqualTo(intTarget);
-                param = numParam;
+                var boolParam = fx.NewBool(layerName, synced: true, saved: model.saved, def: model.defaultOn, usePrefix: usePrefixOnParam);
+                param = boolParam;
+                paramOnCase = boolParam.IsTrue();
             }
-        } else {
-            var boolParam = fx.NewBool(paramName, synced: addMenuItem, saved: model.saved, def: model.defaultOn, usePrefix: usePrefixOnParam);
-            param = boolParam;
-            onCase = boolParam.IsTrue();
+            foreach(var orCond in model.condition.orConditions) {
+                foreach (var trig in orCond.andCondition) {
+                    var mt = trig as MenuTrigger;
+                    if (mt != null && !string.IsNullOrEmpty(mt.menuPath)) {
+                        if (model.holdButton) {
+                            manager.GetMenu().NewMenuButton(
+                                mt.menuPath,
+                                param,
+                                icon: model.icon?.Get(),
+                                value: intTarget != -1 ? intTarget : 1
+                            );
+                        } else {
+                            manager.GetMenu().NewMenuToggle(
+                                mt.menuPath,
+                                param,
+                                icon: model.icon?.Get(),
+                                value: intTarget != -1 ? intTarget : 1
+                            );
+                        }
+                    }
+                }
+            }
+        }
+
+        onCase = GetOnCase(paramOnCase);
+
+        if (model.securityEnabled) {
+            var securityLockUnlocked = allBuildersInRun
+                .OfType<SecurityLockBuilder>()
+                .Select(f => f.GetEnabled())
+                .FirstOrDefault();
+            if (securityLockUnlocked != null) {
+                onCase = onCase.And(securityLockUnlocked);
+            }
         }
         
         if (model.separateLocal) {
@@ -304,23 +448,6 @@ public class ToggleBuilder : FeatureBuilder<Toggle> {
             Apply(fx, layer, off, onCase, layerName + " On", model.state, model.transitionStateIn, model.transitionStateOut, physBoneResetter);
         }
 
-        if (addMenuItem) {
-            if (model.holdButton) {
-                manager.GetMenu().NewMenuButton(
-                    model.name,
-                    param,
-                    icon: model.icon?.Get(),
-                    value: intTarget != -1 ? intTarget : 1
-                );
-            } else {
-                manager.GetMenu().NewMenuToggle(
-                    model.name,
-                    param,
-                    icon: model.icon?.Get(),
-                    value: intTarget != -1 ? intTarget : 1
-                );
-            }
-        }
     }
 
     private void Apply(
@@ -339,16 +466,6 @@ public class ToggleBuilder : FeatureBuilder<Toggle> {
         if (!model.hasTransitionTime)  transitionTime = -1;
 
         var clip = actionClipService.LoadState(onName, action);
-
-        if (model.securityEnabled) {
-            var securityLockUnlocked = allBuildersInRun
-                .OfType<SecurityLockBuilder>()
-                .Select(f => f.GetEnabled())
-                .FirstOrDefault();
-            if (securityLockUnlocked != null) {
-                onCase = onCase.And(securityLockUnlocked);
-            }
-        }
 
         VFState inState;
         VFState onState;
@@ -467,57 +584,66 @@ public class ToggleBuilder : FeatureBuilder<Toggle> {
             off.TransitionsFromEntry().When(allOthersOff);
         }
 
-        if (paramsToTurnOff.Count + paramsToTurnToZero.Count > 0) {
+        
 
-            var exclusiveLayer = GetLayerForParameters(GetPrimaryExclusive());
-            var startState = GetOffState("Default", exclusiveLayer);
-            var triggerState = exclusiveLayer.NewState(layerName);
-            var onParam = useInt ? (param as VFAInteger).IsEqualTo(intTarget) : (param as VFABool).IsTrue();
+        var exclusiveLayer = GetLayerForParameters(GetPrimaryExclusive());
+        var startState = GetOffState("Default", exclusiveLayer);
+        var triggerState = exclusiveLayer.NewState(layerName);
+        var exitState = exclusiveLayer.NewState(layerName + " Exit");
+        var onParam = useInt ? (param as VFAInteger).IsEqualTo(intTarget) : (param as VFABool).IsTrue();
 
-            var intStates = new HashSet<(VFCondition, VFState)>();
+        var intStates = new HashSet<(VFCondition, VFState)>();
 
-            triggerState.TransitionsToExit().When(onParam.Not());
+        triggerState.TransitionsTo(exitState).When(onParam.Not());
+        exitState.TransitionsToExit().When(fx.Always());
 
-            var allOrParam = fx.Never();
+        foreach (var tag in GetExclusiveTags()) {
+            var lockParam = fx.NewBool("VF_" + tag + "_Lock", usePrefix: false);
+            triggerState.Drives(lockParam, true);
+            exitState.Drives(lockParam, false);
+        }
 
-            foreach (var tag in paramsToTurnToZero.Keys) {
-                var orParam = fx.Never();
-                VFAInteger tagParam = paramsToTurnToZero[tag].First().Item1;
-                foreach (var (p, i) in paramsToTurnToZero[tag]) {
-                    orParam = orParam.Or(p.IsEqualTo(i));
-                }
-                var intTriggerState = exclusiveLayer.NewState(layerName + " + " + tagParam.Name());
-                startState.TransitionsTo(intTriggerState).When(onParam.And(orParam));
-                intTriggerState.Drives(tagParam, 0);
+        var allOrParam = fx.Never();
 
-                intStates.Add((onParam.And(orParam), intTriggerState));
-                allOrParam = allOrParam.Or(orParam);
+        foreach (var tag in paramsToTurnToZero.Keys) {
+            var orParam = fx.Never();
+            VFAInteger tagParam = paramsToTurnToZero[tag].First().Item1;
+            foreach (var (p, i) in paramsToTurnToZero[tag]) {
+                orParam = orParam.Or(p.IsEqualTo(i));
             }
+            var intTriggerState = exclusiveLayer.NewState(layerName + " + " + tagParam.Name());
+            startState.TransitionsTo(intTriggerState).When(onParam.And(orParam));
+            intTriggerState.Drives(tagParam, 0);
 
-            foreach (var (condition, s1) in intStates) {
-                foreach (var (dud, s2) in intStates) {
-                    if (s1 != s2) {
-                        s1.TransitionsTo(s2).When(condition);
-                    }
+            intStates.Add((onParam.And(orParam), intTriggerState));
+            allOrParam = allOrParam.Or(orParam);
+        }
+
+        foreach (var (condition, s1) in intStates) {
+            foreach (var (dud, s2) in intStates) {
+                if (s1 != s2) {
+                    s1.TransitionsTo(s2).When(condition);
                 }
-                s1.TransitionsTo(triggerState).When(allOrParam.Not());
             }
+            s1.TransitionsTo(triggerState).When(allOrParam.Not());
+        }
 
-            triggerState.TransitionsFromAny().When(onParam.And(allOrParam.Not()));
+        triggerState.TransitionsFromAny().When(onParam.And(allOrParam.Not()));
             
-            foreach (var p in paramsToTurnOff) {
-                triggerState.Drives(p, false);
-            }
+        foreach (var p in paramsToTurnOff) {
+            triggerState.Drives(p, false);
+        }
 
-            if (!useInt && model.exclusiveOffState) {
-                startState.TransitionsTo(triggerState).When(allOthersOff);
-                triggerState.Drives((param as VFABool), true);
-            }
+        if (!useInt && model.exclusiveOffState) {
+            startState.TransitionsTo(triggerState).When(allOthersOff);
+            triggerState.Drives((param as VFABool), true);
         }
     }
 
     public override string GetClipPrefix() {
-        return "Toggle " + model.name.Replace('/', '_');
+        var temp = GetName().Item1;
+        if (temp == null) temp = "";
+        return "Toggle " + temp.Replace('/', '_');
     }
 
     [FeatureBuilderAction(FeatureOrder.ApplyToggleRestingState)]
@@ -557,8 +683,6 @@ public class ToggleBuilder : FeatureBuilder<Toggle> {
         var defaultSliderProp = prop.FindPropertyRelative("defaultSliderValue");
         var hasTransitionTimeProp = prop.FindPropertyRelative("hasTransitionTime");
         var hasExitTimeProp = prop.FindPropertyRelative("hasExitTime");
-        var useGlobalParamProp = prop.FindPropertyRelative("useGlobalParam");
-        var globalParamProp = prop.FindPropertyRelative("globalParam");
         var holdButtonProp = prop.FindPropertyRelative("holdButton");
 
         var condistionsProp = prop.FindPropertyRelative("condition");
@@ -570,13 +694,9 @@ public class ToggleBuilder : FeatureBuilder<Toggle> {
             }
         };
         content.Add(flex);
-
-        var name = VRCFuryEditorUtils.Prop(prop.FindPropertyRelative("name"), "Menu Path", tooltip: menuPathTooltip);
-        name.style.flexGrow = 1;
-        flex.Add(name);
-
         var con = VRCFuryEditorUtils.Prop(prop.FindPropertyRelative("condition"), "Conditions");
-        content.Add(con);
+        con.style.flexGrow = 1;
+        flex.Add(con);
 
         var button = VRCFuryEditorUtils.Button("Options", () => {
             var advMenu = new GenericMenu();
@@ -674,13 +794,6 @@ public class ToggleBuilder : FeatureBuilder<Toggle> {
                     prop.serializedObject.ApplyModifiedProperties();
                 });
 
-            if (useGlobalParamProp != null) {
-                advMenu.AddItem(new GUIContent("Use a Global Parameter"), useGlobalParamProp.boolValue, () => {
-                    useGlobalParamProp.boolValue = !useGlobalParamProp.boolValue;
-                    prop.serializedObject.ApplyModifiedProperties();
-                });
-            }
-
             if (holdButtonProp != null) {
                 advMenu.AddItem(new GUIContent("Hold Button"), holdButtonProp.boolValue, () => {
                     holdButtonProp.boolValue = !holdButtonProp.boolValue;
@@ -714,17 +827,6 @@ public class ToggleBuilder : FeatureBuilder<Toggle> {
                 }
                 return c;
             }, enableExclusiveTagProp));
-        }
-
-        if (useGlobalParamProp != null) {
-            content.Add(VRCFuryEditorUtils.RefreshOnChange(() => {
-                var c = new VisualElement();
-                if (useGlobalParamProp.boolValue) {
-                    c.Add(VRCFuryEditorUtils.Prop(prop.FindPropertyRelative("globalParam"), "Global Parameter"));
-                }
-
-                return c;
-            }, useGlobalParamProp));
         }
 
         content.Add(VRCFuryEditorUtils.RefreshOnChange(() => {

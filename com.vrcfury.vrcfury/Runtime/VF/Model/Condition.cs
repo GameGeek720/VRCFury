@@ -7,12 +7,12 @@ using VF.Component;
 namespace VF.Model.Conditions {
     [Serializable]
     public class Condition {
-        [SerializeReference] List<AndCondition> orConditions = new List<AndCondition>();
+        [SerializeReference] public List<AndCondition> orConditions = new List<AndCondition>();
     }
 
     [Serializable]
     public class AndCondition {
-        [SerializeReference] List<Trigger> andCondition = new List<Trigger>();
+        [SerializeReference] public List<Trigger> andCondition = new List<Trigger>();
     }
 
     [Serializable]

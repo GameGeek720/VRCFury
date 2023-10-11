@@ -34,6 +34,7 @@ namespace VF.Feature.Base {
         protected List<FeatureBuilder> allBuildersInRun => globals.allBuildersInRun;
         protected Dictionary<string, VFLayer> exclusiveAnimationLayers => globals.exclusiveAnimationLayers;
         protected Dictionary<string, VFLayer> exclusiveParameterLayers => globals.exclusiveParameterLayers;
+        protected List<VFCondition> previousGestures => globals.previousGestures;
         public VFGameObject avatarObjectOverride = null;
         public void addOtherFeature(FeatureModel model) {
             globals.addOtherFeature(model, featureBaseObject);

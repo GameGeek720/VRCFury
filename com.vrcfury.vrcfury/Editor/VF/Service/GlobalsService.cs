@@ -19,5 +19,6 @@ namespace VF.Service {
         public List<FeatureBuilder> allBuildersInRun;
         public Dictionary<string, VFLayer> exclusiveAnimationLayers;
         public Dictionary<string, VFLayer> exclusiveParameterLayers;
+        public List<VFCondition> previousGestures;
     }
 }

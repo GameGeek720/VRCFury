@@ -235,7 +235,7 @@ namespace VF.Model.Feature {
 
     [Serializable]
     public class Toggle : LegacyFeatureModel2 {
-        public string name;
+        [Obsolete] public string name;
         public State state;
         public bool saved;
         public bool slider;
@@ -266,8 +266,8 @@ namespace VF.Model.Feature {
         public State localTransitionStateOut;
         public bool simpleOutTransition = true;
         public float defaultSliderValue = 1;
-        public bool useGlobalParam;
-        public string globalParam;
+        [Obsolete] public bool useGlobalParam;
+        [Obsolete] public string globalParam;
         public bool holdButton;
 
         public Condition condition = new Condition();
@@ -275,6 +275,34 @@ namespace VF.Model.Feature {
         public override void CreateNewInstance(GameObject obj) {
             var n = obj.AddComponent<VRCFuryToggle>();
             // TODO
+        }
+
+        public override bool Upgrade(int fromVersion) {
+#pragma warning disable 0612
+            if (fromVersion < 1) {
+                if(!string.IsNullOrEmpty(name)) {
+                    MenuTrigger mt = new MenuTrigger();
+                    mt.menuPath = name;
+                    AndCondition ac = new AndCondition();
+                    ac.andCondition.Add(mt);
+                    condition.orConditions.Add(ac);
+                }
+                
+                if (useGlobalParam && !string.IsNullOrEmpty(globalParam)) {
+
+                    GlobalTrigger gt = new GlobalTrigger();
+                    gt.boolName = globalParam;
+                    AndCondition ac = new AndCondition();
+                    ac.andCondition.Add(gt);
+                    condition.orConditions.Add(ac);
+                }
+            }
+           
+            return false;
+#pragma warning restore 0612
+        }
+        public override int GetLatestVersion() {
+            return 1;
         }
     }
 

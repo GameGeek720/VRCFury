@@ -108,6 +108,7 @@ public class VRCFuryBuilder {
         var collectedBuilders = new List<FeatureBuilder>();
         var exclusiveAnimationLayers = new Dictionary<string, VFLayer>();
         var exclusiveParameterLayers = new Dictionary<string, VFLayer>();
+        var previousGestures = new List<VFCondition>();
 
 
         var injector = new VRCFuryInjector();
@@ -127,6 +128,7 @@ public class VRCFuryBuilder {
             originalObject = originalObject,
             exclusiveAnimationLayers = exclusiveAnimationLayers,
             exclusiveParameterLayers = exclusiveParameterLayers,
+            previousGestures = previousGestures
         };
         injector.RegisterService(globals);
 
