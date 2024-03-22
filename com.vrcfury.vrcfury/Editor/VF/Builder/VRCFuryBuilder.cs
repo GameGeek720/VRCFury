@@ -27,19 +27,7 @@ public class VRCFuryBuilder {
         Failed
     }
 
-    internal Status SafeRun(
-        VFGameObject avatarObject,
-        bool keepDebugInfo = false
-    ) {
-        /*
-         * We call SaveAssets here for two reasons:
-         * 1. If the build crashes unity for some reason, the user won't lose changes
-         * 2. If we don't call this here, the first time we call AssetDatabase.CreateAsset can randomly
-         *   fail with "Global asset import parameters have been changed during the import. Importing is restarted."
-         *   followed by "Unable to import newly created asset..."
-         */
-        AssetDatabase.SaveAssets();
-
+    internal Status SafeRun(VFGameObject avatarObject) {
         Debug.Log("VRCFury invoked on " + avatarObject.name + " ...");
 
         var result = VRCFExceptionUtils.ErrorDialogBoundary(() => {
@@ -52,12 +40,6 @@ public class VRCFuryBuilder {
                 }
             });
         });
-
-        // Make absolutely positively certain that we've removed every non-standard component from the avatar before it gets uploaded
-        StripAllVrcfComponents(avatarObject, keepDebugInfo);
-
-        // Make sure all new assets we've created have actually been saved to disk
-        AssetDatabase.SaveAssets();
 
         return result ? Status.Success : Status.Failed;
     }
@@ -79,7 +61,7 @@ public class VRCFuryBuilder {
     }
 
     private void Run(VFGameObject avatarObject) {
-        if (VRCFuryTestCopyMenuItem.IsTestCopy(avatarObject)) {
+        if (!Application.isPlaying && VRCFuryTestCopyMenuItem.IsTestCopy(avatarObject)) {
             throw new VRCFBuilderException(
                 "VRCFury Test Copies cannot be uploaded. Please upload the original avatar which was" +
                 " used to create this test instead.");
@@ -90,6 +72,15 @@ public class VRCFuryBuilder {
             return;
         }
 
+        /*
+         * We call SaveAssets here for two reasons:
+         * 1. If the build crashes unity for some reason, the user won't lose changes
+         * 2. If we don't call this here, the first time we call AssetDatabase.CreateAsset can randomly
+         *   fail with "Global asset import parameters have been changed during the import. Importing is restarted."
+         *   followed by "Unable to import newly created asset..."
+         */
+        AssetDatabase.SaveAssets();
+
         var progress = VRCFProgressWindow.Create();
 
         try {
@@ -99,6 +90,12 @@ public class VRCFuryBuilder {
             );
         } finally {
             progress.Close();
+            
+            // Make absolutely positively certain that we've removed every non-standard component from the avatar before it gets uploaded
+            StripAllVrcfComponents(avatarObject, Application.isPlaying);
+
+            // Make sure all new assets we've created have actually been saved to disk
+            AssetDatabase.SaveAssets();
         }
 
         Debug.Log("VRCFury Finished!");
@@ -113,22 +110,18 @@ public class VRCFuryBuilder {
         // old asset and messes with the new copy.
         var tmpDir = $"{tmpDirParent}/{DateTime.Now.ToString("yyyyMMdd-HHmmss")}";
 
-        var mutableManager = new MutableManager(tmpDir);
-
-        var currentModelNumber = 0;
         var currentModelName = "";
         var currentModelClipPrefix = "?";
-        var currentMenuSortPosition = 0;
-        var currentComponentObject = avatarObject;
+        var currentServiceNumber = 0;
+        var currentServiceGameObject = avatarObject;
 
         var actions = new List<FeatureBuilderAction>();
         var totalActionCount = 0;
-        var totalModelCount = 0;
+        var totalServiceCount = 0;
         var collectedModels = new List<FeatureModel>();
         var collectedBuilders = new List<FeatureBuilder>();
 
         var injector = new VRCFuryInjector();
-        injector.RegisterService(mutableManager);
         foreach (var serviceType in ReflectionUtils.GetTypesWithAttributeFromAnyAssembly<VFServiceAttribute>()) {
             injector.RegisterService(serviceType);
         }
@@ -136,15 +129,15 @@ public class VRCFuryBuilder {
         var globals = new GlobalsService {
             tmpDirParent = tmpDirParent,
             tmpDir = tmpDir,
-            addOtherFeature = AddModel,
+            addOtherFeature = (feature) => AddComponent(feature, currentServiceGameObject, currentServiceNumber),
             allFeaturesInRun = collectedModels,
             allBuildersInRun = collectedBuilders,
             avatarObject = avatarObject,
-            currentFeatureNumProvider = () => currentModelNumber,
+            currentFeatureNumProvider = () => currentServiceNumber,
             currentFeatureNameProvider = () => currentModelName,
             currentFeatureClipPrefixProvider = () => currentModelClipPrefix,
-            currentMenuSortPosition = () => currentMenuSortPosition,
-            currentComponentObject = () => currentComponentObject,
+            currentMenuSortPosition = () => currentServiceNumber,
+            currentComponentObject = () => currentServiceGameObject,
         };
         injector.RegisterService(globals);
 
@@ -154,7 +147,6 @@ public class VRCFuryBuilder {
         AddBuilder(typeof(CleanupLegacyBuilder));
         AddBuilder(typeof(RemoveJunkAnimatorsBuilder));
         AddBuilder(typeof(FixDoubleFxBuilder));
-        AddBuilder(typeof(DefaultAdditiveLayerFixBuilder));
         AddBuilder(typeof(FixWriteDefaultsBuilder));
         AddBuilder(typeof(BakeGlobalCollidersBuilder));
         AddBuilder(typeof(AnimatorLayerControlOffsetBuilder));
@@ -169,15 +161,15 @@ public class VRCFuryBuilder {
         AddBuilder(typeof(FixEmptyMotionBuilder));
 
         foreach (var service in injector.GetAllServices()) {
-            AddActionsFromObject(service, avatarObject);
+            AddService(service, avatarObject);
         }
 
-        void AddModel(FeatureModel model, VFGameObject configObject) {
-            collectedModels.Add(model);
+        void AddComponent(FeatureModel component, VFGameObject configObject, int? serviceNumOverride = null) {
+            collectedModels.Add(component);
 
             FeatureBuilder builder;
             try {
-                builder = FeatureFinder.GetBuilder(model, configObject, injector, avatarObject);
+                builder = FeatureFinder.GetBuilder(component, configObject, injector, avatarObject);
             } catch (Exception e) {
                 throw new ExceptionWithCause(
                     $"Failed to load VRCFury component on object {configObject.GetPath(avatarObject)}",
@@ -186,40 +178,35 @@ public class VRCFuryBuilder {
             }
 
             if (builder == null) return;
-            AddActionsFromObject(builder, configObject);
+            AddService(builder, configObject, serviceNumOverride);
         }
 
-        void AddActionsFromObject(object obj, VFGameObject configObject) {
-            var serviceNum = ++totalModelCount;
-            if (obj is FeatureBuilder builder) {
+        void AddService(object service, VFGameObject configObject, int? serviceNumOverride = null) {
+            var serviceNum = serviceNumOverride ?? ++totalServiceCount;
+            if (service is FeatureBuilder builder) {
                 builder.uniqueModelNum = serviceNum;
                 builder.featureBaseObject = configObject;
                 collectedBuilders.Add(builder);
             }
 
-            var actionMethods = obj.GetType().GetMethods()
+            var actionMethods = service.GetType().GetMethods()
                 .Select(m => (m, m.GetCustomAttribute<FeatureBuilderActionAttribute>()))
                 .Where(tuple => tuple.Item2 != null)
                 .ToArray();
             if (actionMethods.Length == 0) return;
 
-            // If we're in the middle of processing a service action, the newly added service should
-            // inherit the menu sort position from the current one
-            var menuSortPosition = currentMenuSortPosition > 0 ? currentMenuSortPosition : serviceNum;
-
             var list = new List<FeatureBuilderAction>();
             foreach (var (method, attr) in actionMethods) {
-                list.Add(new FeatureBuilderAction(attr, method, obj, serviceNum, menuSortPosition, configObject));
+                list.Add(new FeatureBuilderAction(attr, method, service, serviceNum, configObject));
             }
             actions.AddRange(list);
             totalActionCount += list.Count;
         }
 
-        progress.Progress(0, "Collecting features");
+        progress.Progress(0, "Collecting VRCFury components");
         foreach (var c in avatarObject.GetComponentsInSelfAndChildren<VRCFuryComponent>()) {
             c.Upgrade();
         }
-
         foreach (var vrcFury in avatarObject.GetComponentsInSelfAndChildren<VRCFury>()) {
             var configObject = vrcFury.gameObject;
             if (VRCFuryEditorUtils.IsInRagdollSystem(configObject.transform)) {
@@ -236,7 +223,7 @@ public class VRCFuryBuilder {
             }
 
             var debugLogString = $"Importing {vrcFury.content.GetType().Name} from {configObject.name}";
-            AddModel(vrcFury.content, configObject);
+            AddComponent(vrcFury.content, configObject);
             Debug.Log(debugLogString);
         }
 
@@ -248,7 +235,7 @@ public class VRCFuryBuilder {
             }
         }
 
-        AddModel(new DirectTreeOptimizer { managedOnly = true }, avatarObject);
+        AddComponent(new DirectTreeOptimizer { managedOnly = true }, avatarObject);
 
         FeatureOrder? lastPriority = null;
         while (actions.Count > 0) {
@@ -256,7 +243,7 @@ public class VRCFuryBuilder {
             actions.Remove(action);
             var service = action.GetService();
             if (action.configObject == null) {
-                var statusSkipMessage = $"{service.GetType().Name} ({currentModelNumber}) Skipped (Object no longer exists)";
+                var statusSkipMessage = $"{service.GetType().Name} ({currentServiceNumber}) Skipped (Object no longer exists)";
                 progress.Progress(1 - (actions.Count / (float)totalActionCount), statusSkipMessage);
                 continue;
             }
@@ -267,14 +254,13 @@ public class VRCFuryBuilder {
                 injector.GetService<RestingStateService>().OnPhaseChanged();
             }
 
-            currentModelNumber = action.serviceNum;
+            currentServiceNumber = action.serviceNum;
             var objectName = action.configObject.GetPath(avatarObject, prettyRoot: true);
             currentModelName = $"{service.GetType().Name}.{action.GetName()} on {objectName}";
-            currentModelClipPrefix = $"VF{currentModelNumber} {(service as FeatureBuilder)?.GetClipPrefix() ?? service.GetType().Name}";
-            currentMenuSortPosition = action.menuSortOrder;
-            currentComponentObject = action.configObject;
+            currentModelClipPrefix = $"VF{currentServiceNumber} {(service as FeatureBuilder)?.GetClipPrefix() ?? service.GetType().Name}";
+            currentServiceGameObject = action.configObject;
 
-            var statusMessage = $"{service.GetType().Name}.{action.GetName()} on {objectName} ({currentModelNumber})";
+            var statusMessage = $"{service.GetType().Name}.{action.GetName()} on {objectName} ({currentServiceNumber})";
             progress.Progress(1 - (actions.Count / (float)totalActionCount), statusMessage);
 
             try {

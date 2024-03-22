@@ -2,6 +2,7 @@
 using System.Collections.Generic;
 using System.Collections.Immutable;
 using System.Linq;
+using JetBrains.Annotations;
 using UnityEditor;
 using UnityEditor.UIElements;
 using UnityEngine;
@@ -61,6 +62,7 @@ namespace VF.Feature {
 
             // Move over all the old components / children from the old location to a new child
             var animLink = new VFMultimapList<VFGameObject, VFGameObject>();
+            var pruneCheck = new HashSet<VFGameObject>();
             foreach (var (propBone, avatarBone) in links.mergeBones) {
                 bool ShouldReparent() {
                     if (propBone == links.propMain) return true;
@@ -144,24 +146,20 @@ namespace VF.Feature {
                     RewriteSkins(propBone, avatarBone);
                 }
 
-                if (fakeHead.IsEligible(propBone)) {
-                    fakeHead.MarkEligible(addedObject);
-                }
-
-                // If the transform isn't used and contains no children, we can just throw it away
-                var keepReasons = GetUsageReasons(propBone, avatarObject);
-                if (keepReasons.Count == 0) {
-                    addedObject.Destroy();
-                    continue;
-                }
-
-                keepReasons.UnionWith(anim.GetDebugSources(propBone));
-                var debugInfo = addedObject.AddComponent<VRCFuryDebugInfo>();
-                debugInfo.debugInfo = "VRCFury did not fully merge this object because:\n";
-                debugInfo.debugInfo += string.Join("\n", keepReasons.OrderBy(a => a));
+                pruneCheck.Add(addedObject);
             }
 
             mover.ApplyDeferred();
+            
+            // Clean up objects that don't need to exist anymore
+            // (this should happen before toggle rewrites, so we don't have to add toggles for a ton of things that won't exist anymore)
+            var usedReasons = GetUsageReasons(avatarObject);
+            var attachDebugInfoTo = new HashSet<VFGameObject>();
+            foreach (var obj in pruneCheck) {
+                if (obj == null) continue;
+                attachDebugInfoTo.UnionWith(obj.GetSelfAndAllChildren());
+                if (!usedReasons.ContainsKey(obj)) obj.Destroy();
+            }
 
             // Rewrite animations that turn off parents
             foreach (var clip in manager.GetAllUsedControllers().SelectMany(c => c.GetClips())) {
@@ -174,6 +172,18 @@ namespace VF.Feature {
                         var b = binding;
                         b.path = other.GetPath(avatarObject);
                         clip.SetFloatCurve(b, clip.GetFloatCurve(binding));
+                    }
+                }
+            }
+
+            if (Application.isPlaying) {
+                foreach (var obj in attachDebugInfoTo) {
+                    if (obj == null) continue;
+                    if (usedReasons.ContainsKey(obj)) {
+                        var debugInfo = obj.AddComponent<VRCFuryDebugInfo>();
+                        debugInfo.debugInfo =
+                            "VRCFury Armature Link did not clean up this object because it is still used:\n";
+                        debugInfo.debugInfo += string.Join("\n", usedReasons.Get(obj).OrderBy(a => a));
                     }
                 }
             }
@@ -225,52 +235,37 @@ namespace VF.Feature {
             return (avatarMainScale, propMainScale, scalingFactor);
         }
 
-        public static HashSet<string> GetUsageReasons(VFGameObject obj, VFGameObject avatarObject) {
-            var reasons = new HashSet<string>();
-            
-            string GetPath(object o) {
-                if (o is UnityEngine.Component c) {
-                    return c.owner().GetPath(avatarObject);
-                }
-                return "";
+        public static VFMultimapSet<VFGameObject,string> GetUsageReasons(VFGameObject avatarObject) {
+            var reasons = new VFMultimapSet<VFGameObject,string>();
+
+            foreach (var component in avatarObject.GetComponentsInSelfAndChildren<UnityEngine.Component>()) {
+                if (component is Transform) continue;
+                reasons.Put(component.owner(), "Contains components");
+
+                var so = new SerializedObject(component);
+                var prop = so.GetIterator();
+                do {
+                    if (prop.propertyPath.StartsWith("ignoreTransforms.Array")) {
+                        // TODO: If we remove objects that are in these physbone ignoreTransforms arrays, we should
+                        // probably also remove them from the array instead of just leaving it null
+                        continue;
+                    }
+                    if (prop.propertyType == SerializedPropertyType.ObjectReference) {
+                        VFGameObject target = null;
+                        if (prop.objectReferenceValue is Transform t) target = t;
+                        else if (prop.objectReferenceValue is GameObject g) target = g;
+                        if (target != null && target.IsChildOf(avatarObject)) {
+                            reasons.Put(target, prop.propertyPath + " in " + component.GetType().Name + " on " + component.owner().GetPath(avatarObject, true));
+                        }
+                    }
+                } while (prop.Next(true));
             }
 
-            if (obj.childCount > 0) {
-                reasons.Add("Added children");
-            }
-            if (obj.GetComponents<UnityEngine.Component>().Length > 1) {
-                reasons.Add("Added components");
-            }
-
-            foreach (var s in avatarObject.GetComponentsInSelfAndChildren<SkinnedMeshRenderer>()) {
-                if (s.bones.Contains(obj.transform)) {
-                    reasons.Add("Bone in " + GetPath(s));
-                }
-                if (s.rootBone == obj) {
-                    reasons.Add("Root bone in " + GetPath(s));
-                }
-            }
-            foreach (var c in avatarObject.GetComponentsInSelfAndChildren<IConstraint>()) {
-                if (Enumerable.Range(0, c.sourceCount)
-                    .Select(i => c.GetSource(i))
-                    .Any(source => source.sourceTransform == obj)
-                ) {
-                    reasons.Add("Target of constraint " + GetPath(c));
-                }
-            }
-            foreach (var b in avatarObject.GetComponentsInSelfAndChildren<VRCPhysBoneBase>()) {
-                if (b.GetRootTransform() == obj) {
-                    reasons.Add("Target of physbone " + GetPath(b));
-                }
-            }
-            foreach (var b in avatarObject.GetComponentsInSelfAndChildren<VRCPhysBoneColliderBase>()) {
-                if (b.GetRootTransform() == obj) {
-                    reasons.Add("Target of collider " + GetPath(b));
-                }
-            }
-            foreach (var b in avatarObject.GetComponentsInSelfAndChildren<ContactBase>()) {
-                if (b.GetRootTransform() == obj) {
-                    reasons.Add("Target of contact " + GetPath(b));
+            foreach (var used in reasons.GetKeys().ToArray()) {
+                foreach (var parent in used.GetSelfAndAllParents()) {
+                    if (parent != used && parent.IsChildOf(avatarObject)) {
+                        reasons.Put(parent, "A child object is used");
+                    }
                 }
             }
 
@@ -607,8 +602,22 @@ namespace VF.Feature {
                 "VRCFury will attempt to merge it anyways, but the chest area may not look correct.");
             chestUpWarning.SetVisible(false);
             container.Add(chestUpWarning);
+            
+            var hipsWarning = VRCFuryEditorUtils.Warn(
+                "It appears this object is clothing with an Armature and Hips bone. If you are trying to link the clothing to your avatar," +
+                " the Link From box should be the Hips object from this clothing, not this main object!");
+            hipsWarning.SetVisible(false);
+            container.Add(hipsWarning);
 
             container.Add(VRCFuryEditorUtils.Debug(refreshMessage: () => {
+                hipsWarning.SetVisible(false);
+                if (model.propBone != null) {
+                    var hipsGuess = GuessLinkFrom(model.propBone);
+                    if (hipsGuess != null && hipsGuess != model.propBone) {
+                        hipsWarning.SetVisible(true);
+                    }
+                }
+                
                 chestUpWarning.SetVisible(false);
                 if (avatarObject == null) {
                     return "Avatar descriptor is missing";
@@ -667,6 +676,46 @@ namespace VF.Feature {
                 output.Add(VRCFuryEditorUtils.Prop(prop.FindPropertyRelative("offset")).FlexBasis(0).FlexGrow(1));
                 return output;
             }
+        }
+
+        [CanBeNull]
+        public static VFGameObject GuessLinkFrom(VFGameObject componentObject) {
+            // Try finding the hips following the same path they are on the avatar
+            {
+                var avatarObject = VRCAvatarUtils.GuessAvatarObject(componentObject);
+                if (componentObject == avatarObject) return null;
+                if (avatarObject != null) {
+                    var avatarHips = VRCFArmatureUtils.FindBoneOnArmatureOrNull(avatarObject, HumanBodyBones.Hips);
+                    if (avatarHips != null) {
+                        var pathToAvatarHips = avatarHips.GetPath(avatarObject);
+                        var foundHips = componentObject.Find(pathToAvatarHips);
+                        if (foundHips != null) return foundHips;
+                    }
+                }
+            }
+
+            // Try finding the hips following normal naming conventions
+            {
+                var armatures = new List<VFGameObject>();
+                if (componentObject.name.ToLower().Contains("armature") ||
+                    componentObject.name.ToLower().Contains("skeleton")) {
+                    armatures.Add(componentObject);
+                }
+
+                armatures.AddRange(componentObject
+                    .Children()
+                    .Where(child =>
+                        child.name.ToLower().Contains("armature") || child.name.ToLower().Contains("skeleton")));
+
+                var hips = armatures
+                    .SelectMany(armature => armature.Children())
+                    .FirstOrDefault(child => child.name.ToLower().Contains("hip"));
+                if (hips != null) {
+                    return hips;
+                }
+            }
+
+            return componentObject;
         }
     }
 }

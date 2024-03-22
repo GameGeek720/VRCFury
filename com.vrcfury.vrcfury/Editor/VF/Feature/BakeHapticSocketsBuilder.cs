@@ -87,19 +87,20 @@ namespace VF.Feature {
             foreach (var socket in avatarObject.GetComponentsInSelfAndChildren<VRCFuryHapticSocket>()) {
                 try {
                     VFGameObject obj = socket.owner();
-                    PhysboneUtils.RemoveFromPhysbones(socket.transform);
-                    fakeHead.MarkEligible(socket.owner());
-                    if (HapticUtils.IsChildOfHead(socket.owner())) {
-                        var head = VRCFArmatureUtils.FindBoneOnArmatureOrNull(avatarObject, HumanBodyBones.Head);
-                        mover.Move(socket.owner(), head);
-                    }
-                    
+                    PhysboneUtils.RemoveFromPhysbones(socket.owner());
+
                     var name = VRCFuryHapticSocketEditor.GetName(socket);
                     name = uniqueHapticNamesService.GetUniqueName(name);
                     Debug.Log("Baking haptic component in " + socket.owner().GetPath() + " as " + name);
 
                     var bakeRoot = VRCFuryHapticSocketEditor.Bake(socket, hapticContacts);
                     if (bakeRoot == null) continue;
+                    
+                    addOtherFeature(new ShowInFirstPerson {
+                        useObjOverride = true,
+                        objOverride = bakeRoot,
+                        onlyIfChildOfHead = true
+                    });
                     
                     if (HapticsToggleMenuItem.Get() && !socket.sendersOnly) {
                         // Haptic receivers

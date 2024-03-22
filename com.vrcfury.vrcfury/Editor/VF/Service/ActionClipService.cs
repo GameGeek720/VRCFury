@@ -21,7 +21,6 @@ namespace VF.Service {
     [VFService]
     public class ActionClipService {
         [VFAutowired] private readonly AvatarManager manager;
-        [VFAutowired] private readonly MutableManager mutableManager;
         [VFAutowired] private readonly AvatarManager avatarManager;
         [VFAutowired] private readonly ClipBuilderService clipBuilder;
         [VFAutowired] private readonly FullBodyEmoteService fullBodyEmoteService;
@@ -303,6 +302,21 @@ namespace VF.Service {
                         
                         break;
                     }
+                    case SmoothLoopAction smoothLoopAction: {
+                        var clip1 = LoadState("tmp", smoothLoopAction.state1, animObjectOverride);
+                        var clip2 = LoadState("tmp", smoothLoopAction.state2, animObjectOverride);
+
+                        var built = clipBuilder.MergeSingleFrameClips(
+                            (0, clip1),
+                            (smoothLoopAction.loopTime / 2, clip2),
+                            (smoothLoopAction.loopTime, clip1)
+                        );
+
+                        onClip.CopyFrom(built);
+                        onClip.SetLooping(true);
+                        
+                        break;
+                    }
                 }
             }
 
@@ -331,7 +345,7 @@ namespace VF.Service {
             };
         }
 
-        public static (IList<Renderer>, ShaderUtil.ShaderPropertyType? type) MatPropLookup(
+        public static (IList<Renderer>, ShaderUtil.ShaderPropertyType type) MatPropLookup(
             bool allRenderers,
             Renderer singleRenderer,
             VFGameObject avatarObject,
@@ -345,22 +359,15 @@ namespace VF.Service {
             }
             renderers = renderers.NotNull().ToArray();
             if (propName == null) {
-                return (renderers, null);
+                return (renderers, ShaderUtil.ShaderPropertyType.Float);
             }
 
-            var found = renderers
-                .Select(r => (r, r.GetPropertyType(propName)))
-                .Where(pair => pair.Item2 != null)
-                .ToArray();
-            if (found.Length == 0) {
-                return (new Renderer[] {}, null);
-            }
-            // Limit to the material type of the first found renderer
-            var type = found[0].Item2;
-            renderers = found
-                .Where(pair => pair.Item2 == type)
-                .Select(pair => pair.Item1)
-                .ToArray();
+            var type = renderers
+                .Select(r => r.GetPropertyType(propName))
+                .Where(t => t.HasValue)
+                .Select(t => t.Value)
+                .DefaultIfEmpty(ShaderUtil.ShaderPropertyType.Float)
+                .First();
             return (renderers, type);
         }
 

@@ -21,7 +21,7 @@ namespace VF.Feature {
         }
         
         private void AdjustTransition(ControllerManager controller, AnimatorTransitionBase transition) {
-            var tru = controller.NewBool("True", def: true);
+            var tru = controller.True();
             transition.RewriteConditions(c => {
                 if (c.parameter != "GestureLeft" && c.parameter != "GestureRight" &&
                     c.parameter != "GestureLeftWeight" && c.parameter != "GestureRightWeight") {
@@ -41,7 +41,7 @@ namespace VF.Feature {
         }
 
         public override string GetEditorTitle() {
-            return "Remove Hand Gestures";
+            return "Remove Built-in Hand Gestures";
         }
 
         public override VisualElement CreateEditor(SerializedProperty prop) {

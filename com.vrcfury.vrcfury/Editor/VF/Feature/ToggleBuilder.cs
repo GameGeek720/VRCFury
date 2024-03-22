@@ -31,7 +31,7 @@ public class ToggleBuilder : FeatureBuilder<Toggle> {
 
     private string primaryExclusive = null;
 
-    private const string menuPathTooltip = "Menu Path is where you'd like the toggle to be located in the menu. This is unrelated"
+    public const string menuPathTooltip = "This is where you'd like the toggle to be located in the menu. This is unrelated"
         + " to the menu filenames -- simply enter the title you'd like to use. If you'd like the toggle to be in a submenu, use slashes. For example:\n\n"
         + "If you want the toggle to be called 'Shirt' in the root menu, you'd put:\nShirt\n\n"
         + "If you want the toggle to be called 'Pants' in a submenu called 'Clothing', you'd put:\nClothing/Pants";
@@ -235,7 +235,9 @@ public class ToggleBuilder : FeatureBuilder<Toggle> {
                 .Select(f => f.GetEnabled())
                 .FirstOrDefault();
             if (securityLockUnlocked != null) {
-                onCase = onCase.And(securityLockUnlocked);
+                onCase = onCase.And(securityLockUnlocked.IsTrue());
+            } else {
+                Debug.LogWarning("Security pin not set, restriction disabled");
             }
         }
 
@@ -252,6 +254,7 @@ public class ToggleBuilder : FeatureBuilder<Toggle> {
                 );
                 clip.UseLinearTangents();
             }
+            clip.SetLooping(false);
             onState.WithAnimation(clip).MotionTime(weight);
             onState.TransitionsToExit().When(onCase.Not());
             restingClip = clip.Evaluate(model.defaultSliderValue * clip.length);
@@ -374,6 +377,7 @@ public class ToggleBuilder : FeatureBuilder<Toggle> {
             aliasState.TransitionsTo(startState).When(intParam.IsEqualTo(intTarget).Not());
             aliasState.TransitionsTo(intResetState).When(boolParam.IsFalse().And(intParam.IsEqualTo(intTarget)));
             intResetState.TransitionsTo(startState).When(fx.Always());
+            aliasState.TransitionsTo(aliasState).When(intParam.IsEqualTo(intTarget).Or(boolParam.IsTrue()));
             fx.UnsyncParam(boolParam.Name());
         }
         
@@ -399,9 +403,9 @@ public class ToggleBuilder : FeatureBuilder<Toggle> {
         if (!savedRestingClip.IsStatic()) return;
 
         foreach (var b in savedRestingClip.GetFloatBindings())
-            writeDefaultsManager.RecordDefaultNow(b, true);
+            writeDefaultsManager.RecordDefaultNow(b, true, true);
         foreach (var b in savedRestingClip.GetObjectBindings())
-            writeDefaultsManager.RecordDefaultNow(b, false);
+            writeDefaultsManager.RecordDefaultNow(b, false, true);
         restingState.ApplyClipToRestingState(savedRestingClip);
     }
 
