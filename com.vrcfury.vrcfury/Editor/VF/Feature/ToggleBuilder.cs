@@ -320,7 +320,7 @@ namespace VF.Feature {
 
         [FeatureBuilderAction(FeatureOrder.CollectToggleExclusiveTags)]
         public void ApplyExclusiveTags() {
-            if (exclusiveTagTriggeringStates.Count == 0) return;
+             if (!(model.exclusiveOffState && isOn != null && drive != null)) return;
 
             var allOthersOffCondition = fx.Always();
 
@@ -332,9 +332,6 @@ namespace VF.Feature {
                 var conflictsWithOther = myTags.Any(myTag => otherTags.Contains(myTag));
                 if (conflictsWithOther) {
                     if (other.isOn != null && other.drive != null) {
-                        foreach (var state in exclusiveTagTriggeringStates) {
-                            other.drive(state, false);
-                        }
                         allOthersOffCondition = allOthersOffCondition.And(other.isOn.Not());
                     }
                 }
