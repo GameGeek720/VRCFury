@@ -13,7 +13,7 @@ using VF.Utils;
 namespace VF.Actions {
     [FeatureTitle("Set a Tag State")]
     internal class TagStateActionBuilder : ActionBuilder<TagStateAction> {
-        [VFAutowired] private readonly ControllersService controllers;
+        [VFAutowired] [CanBeNull] private readonly ControllersService controllers;
         private ControllerManager fx => controllers.GetFx();
         [VFAutowired] [CanBeNull] private readonly GlobalsService globals;
         [VFAutowired] [CanBeNull] private readonly DriveOtherTypesFromFloatService driveOtherTypesFromFloatService;
