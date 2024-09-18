@@ -278,7 +278,7 @@ namespace VF.Service {
                         }
 
                         var activeClip = actionClipService.LoadState($"SPS - Active Animation for {name}", socket.activeActions);
-                        if (activeClip.GetAllBindings().Any()) {
+                        if (new AnimatorIterator.Clips().From(activeClip).SelectMany(clip => clip.GetAllBindings()).Any()) {
                             var activeAnimParam = fx.NewFloat($"SPS - Active Animation for {name}");
                             var activeAnimLayer = fx.NewLayer($"SPS - Active Animation for {name}");
                             var off = activeAnimLayer.NewState("Off");
@@ -364,7 +364,7 @@ namespace VF.Service {
                 }
                 stop.TransitionsTo(stopped).When(fx.Always());
 
-                var vsParam = math.MakeAap("comparison", animatedFromDefaultTree: false);
+                var vsParam = math.MakeAap("comparison");
 
                 var states = new Dictionary<Tuple<int, int>, VFState>();
                 for (var i = 0; i < autoSockets.Count; i++) {
@@ -381,7 +381,6 @@ namespace VF.Service {
                         var (bName, bEnabled, bDist) = autoSockets[j];
                         var vs = layer.NewState($"{aName} vs {bName}").Move(triggerOff, 0, j+1);
                         var tree = clipFactory.NewDBT($"{aName} vs {bName}");
-                        math.MakeAapSafe(tree, vsParam);
                         tree.Add(bDist, math.MakeSetter(vsParam, 1));
                         tree.Add(aDist, math.MakeSetter(vsParam, -1));
                         vs.WithAnimation(tree);

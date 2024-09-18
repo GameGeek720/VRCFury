@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Collections.Generic;
 using UnityEditor.Animations;
 using UnityEngine;
 using VF.Feature.Base;
@@ -10,29 +11,33 @@ namespace VF.Service {
     [VFPrototypeScope]
     internal class ClipFactoryService {
         [VFAutowired] private readonly VFInjectorParent parent;
-        [VFAutowired] private readonly ClipFactoryTrackingService clipFactoryTracking;
 
         public AnimationClip GetEmptyClip() {
             return NewClip("Empty");
         }
-        public AnimationClip NewClip(string name) {
+        public AnimationClip NewClip(string name, bool usePrefix = true) {
             var clip = VrcfObjectFactory.Create<AnimationClip>();
-            clipFactoryTracking.MarkCreated(clip);
-            clip.name = $"{GetPrefix()}/{name}";
+            clip.name = usePrefix ? $"{GetPrefix()}/{name}" : name;
             return clip;
         }
 
-        private BlendTree NewBlendTree(string name, BlendTreeType type) {
+        public AnimationClip MakeAapSetter(string param, float value) {
+            var clip = VrcfObjectFactory.Create<AnimationClip>();
+            clip.name = $"AAP: {param} = {value}";
+            clip.SetAap(param, value);
+            return clip;
+        }
+
+        private BlendTree NewBlendTree(string name, BlendTreeType type, bool usePrefix = true) {
             var tree = VrcfObjectFactory.Create<BlendTree>();
-            clipFactoryTracking.MarkCreated(tree);
-            tree.name = $"{GetPrefix()}/{name}";
+            tree.name = usePrefix ? $"{GetPrefix()}/{name}" : name;
             tree.useAutomaticThresholds = false;
             tree.blendType = type;
             return tree;
         }
         
-        public VFBlendTreeDirect NewDBT(string name) {
-            var tree = NewBlendTree(name, BlendTreeType.Direct);
+        public VFBlendTreeDirect NewDBT(string name, bool usePrefix = true) {
+            var tree = NewBlendTree(name, BlendTreeType.Direct, usePrefix);
             return new VFBlendTreeDirect(tree);
         }
         
