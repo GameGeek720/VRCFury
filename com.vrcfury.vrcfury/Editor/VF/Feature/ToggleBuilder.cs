@@ -254,7 +254,7 @@ namespace VF.Feature {
                 if (!new AnimatorIterator.Clips().From(motion).SelectMany(clip => clip.GetAllBindings()).Any()) {
                     motion = inClip.GetLastFrame();
                 }
-                var outClip = model.simpleOutTransition ? inClip.Clone() : actionClipService.LoadState(onName + " Out", outAction);
+                var outClip = model.simpleOutTransition ? (originalInAction == null ? inClip.Clone() : actionClipService.LoadState(onName + " Out", originalInAction)) : actionClipService.LoadState(onName + " Out", outAction);
                 var outSpeed = model.simpleOutTransition ? -1 : 1;
                 
                 // Copy "object enabled" and "material" states to in and out clips if they don't already have them
