@@ -3,11 +3,9 @@ using System.Collections.Generic;
 using System.Collections.Immutable;
 using System.Linq;
 using JetBrains.Annotations;
-using UnityEditor;
 using UnityEngine;
 using VF.Actions;
 using VF.Builder;
-using VF.Feature;
 using VF.Feature.Base;
 using VF.Injector;
 using VF.Model;
@@ -47,7 +45,6 @@ namespace VF.Service {
         
         public class BuiltAction {
             public Motion onClip = VrcfObjectFactory.Create<AnimationClip>();
-            public AnimationClip bakingClip = VrcfObjectFactory.Create<AnimationClip>();
             public AnimationClip implicitRestingClip = VrcfObjectFactory.Create<AnimationClip>();
             public bool useMotionTime = false;
         }
@@ -69,7 +66,7 @@ namespace VF.Service {
             var bakingClip = VrcfObjectFactory.Create<AnimationClip>();
 
             var outputMotions = state.actions
-                .Select(a => LoadAction(name, a, offClip, bakingClip, animObject))
+                .Select(a => LoadAction(name, a, offClip, animObject))
                 .Where(motion => new AnimatorIterator.Clips().From(motion).SelectMany(clip => clip.GetAllBindings()).Any())
                 .ToList();
 
@@ -118,13 +115,12 @@ namespace VF.Service {
 
             return new BuiltAction {
                 onClip = output,
-                bakingClip = bakingClip,
                 implicitRestingClip = offClip,
                 useMotionTime = useMotionTime
             };
         }
 
-        private Motion LoadAction(string name, Action action, AnimationClip offClip, AnimationClip bakingClip, VFGameObject animObject) {
+        private Motion LoadAction(string name, Action action, AnimationClip offClip, VFGameObject animObject) {
             if (action == null) {
                 throw new Exception("Action is corrupt");
             }
@@ -156,10 +152,7 @@ namespace VF.Service {
                     output = BlendtreeMath.GreaterThan(fx.IsLocal().AsFloat(), 0).create(output, null);
                 } else {
                     output = BlendtreeMath.GreaterThan(fx.IsLocal().AsFloat(), 0).create(null, output);
-                    bakingClip.CopyFrom(clip);
                 }
-            } else {
-                bakingClip.CopyFrom(clip);
             }
 
             return output;

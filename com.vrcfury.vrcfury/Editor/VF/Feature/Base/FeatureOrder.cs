@@ -1,8 +1,9 @@
 namespace VF.Feature.Base {
     internal enum FeatureOrder {
-
+        
         CollectExistingComponents,
         CleanupLegacy,
+        BackupBefore,
 
         // Needs to happen before everything
         FixDoubleFx,
@@ -11,6 +12,8 @@ namespace VF.Feature.Base {
 
         // Needs to happen before anything starts using the Animator
         ResetAnimatorBefore,
+        
+        CloneAllControllers,
         
         FixAmbiguousObjectNames,
         
@@ -91,11 +94,11 @@ namespace VF.Feature.Base {
         AvoidMmdLayers, // Needs to be after CleanupEmptyLayers (which removes empty layers) and FixMasks and RecordAllDefaults (which may insert layers at the top)
         AnimatorLayerControlFix,
         RemoveNonQuestMaterials,
-        UpgradeWrongParamTypes,
         FixTreeLength,
         TreeFlattening,
         AdjustWriteDefaults, // Needs to be after TreeFlattening, since it can change whether or not a layer has a DBT
         FixEmptyMotions, // Needs to be after AdjustWriteDefaults, since it changes behaviour if a state is WD on or off
+        UpgradeWrongParamTypes,
         FinalizeController,
 
         // Finalize Menus
@@ -117,5 +120,6 @@ namespace VF.Feature.Base {
         
         Validation,
         HideAddedComponents,
+        BackupAfter,
     }
 }
