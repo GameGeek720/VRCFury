@@ -75,6 +75,10 @@ namespace VF.Builder {
                 Debug.Log("VRCFury components not found in avatar. Skipping.");
                 return;
             }
+            
+            // If we don't do this, a unity issue in RepaintImmediately can randomly throw a segfault
+            RenderTexture.active = null;
+            Camera.SetupCurrent(null);
 
             /*
              * We call SaveAssets here for two reasons:
@@ -109,10 +113,6 @@ namespace VF.Builder {
             VFGameObject avatarObject,
             VRCFProgressWindow progress
         ) {
-            if (!Application.isPlaying) {
-                TmpFilePackage.Cleanup();
-            }
-
             var currentModelName = "";
             var currentModelClipPrefix = "?";
             var currentServiceNumber = 0;

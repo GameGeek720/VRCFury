@@ -106,7 +106,7 @@ namespace VF.Service {
                 var dbt = VFBlendTreeDirect.Create(name);
                 output = dbt;
                 foreach (var motion in outputMotions) {
-                    dbt.Add(fx?.One() ?? "One", motion);
+                    dbt.Add(motion);
                 }
             } else {
                 output = clipFactory.NewClip(name);
