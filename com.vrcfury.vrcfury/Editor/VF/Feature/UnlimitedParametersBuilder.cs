@@ -36,17 +36,31 @@ namespace VF.Feature {
 
         [FeatureBuilderAction(FeatureOrder.UnlimitedParameters)]
         public void Apply() {
+            var maxBits = VRCExpressionParameters.MAX_PARAMETER_COST;
+            if (maxBits > 9999) {
+                // Some modified versions of the VRChat SDK have a broken value for this
+                maxBits = 256;
+            }
+
+            if (paramz.GetRaw().CalcTotalCost() <= maxBits) {
+                Debug.Log($"No Parameter Compressing Required");
+                return;
+            }
+
             if (networkSyncedField == null) {
                 throw new Exception("Your VRCSDK is too old to support VRCFury Parameter Compressor.");
             }
 
             var paramsToOptimize = GetParamsToOptimize();
-            var boolsInParallel = 8;
 
             var numbersToOptimize =
                 paramsToOptimize.Where(i => i.type != VRCExpressionParameters.ValueType.Bool).ToList();
             var boolsToOptimize =
                 paramsToOptimize.Where(i => i.type == VRCExpressionParameters.ValueType.Bool).ToList();
+            
+
+            var boolsInParallel = maxBits - (paramz.GetRaw().CalcTotalCost() - (numbersToOptimize.Count() - 1) * 8 - boolsToOptimize.Count() + 8);
+
             if (boolsToOptimize.Count <= boolsInParallel) boolsToOptimize.Clear();
             var boolBatches = boolsToOptimize.Select(i => i.name)
                 .Chunk(boolsInParallel)
