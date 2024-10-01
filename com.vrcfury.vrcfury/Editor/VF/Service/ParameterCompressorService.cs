@@ -42,7 +42,7 @@ namespace VF.Service {
                 maxBits = 256;
             }
 
-            if (paramz.GetRaw().CalcTotalCost() <= maxBits) {
+            if (paramz.GetRaw().CalcTotalCost() <= maxBits && BuildTargetUtils.IsDesktop()) {
                 Debug.Log($"No Parameter Compressing Required");
                 return;
             }
