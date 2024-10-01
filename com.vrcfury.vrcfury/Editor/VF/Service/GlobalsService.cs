@@ -22,5 +22,6 @@ namespace VF.Service {
         public Func<VFGameObject> currentComponentObject;
         public VFAFloat currentTriggerParam;
         public FeatureBuilder currentFeature;
+        public Func<string> currentFeatureObjectPath;
     }
 }
