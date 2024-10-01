@@ -159,7 +159,7 @@ namespace VF.Utils {
                 param.valueType = VRCExpressionParameters.ValueType.Float;
                 param.saved = saved;
                 param.defaultValue = def;
-                if (networkSyncedField != null) networkSyncedField.SetValue(param, networkSynced);
+                param.SetNetworkSynced(networkSynced, true);
                 GetParamManager().AddSyncedParam(param);
             }
             return ctrl.NewFloat(name, def);

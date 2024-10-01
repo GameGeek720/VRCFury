@@ -61,15 +61,16 @@ namespace VF.Service {
                 paramsToOptimize.Where(i => i.type != VRCExpressionParameters.ValueType.Bool).ToList();
             var boolsToOptimize =
                 paramsToOptimize.Where(i => i.type == VRCExpressionParameters.ValueType.Bool).ToList();
+            
+            var boolsInParallel = maxBits - (paramz.GetRaw().CalcTotalCost() - numbersToOptimize.Count() * 8 - boolsToOptimize.Count() + 16);
+
+            if (boolsInParallel <= 0) boolsInParallel = 1;
+
             if (boolsToOptimize.Count <= boolsInParallel) boolsToOptimize.Clear();
             var boolBatches = boolsToOptimize.Select(i => i.name)
                 .Chunk(boolsInParallel)
                 .Select(chunk => chunk.ToList())
                 .ToList();
-
-            var boolsInParallel = maxBits - (paramz.GetRaw().CalcTotalCost() - numbersToOptimize.Count() * 8 - boolsToOptimize.Count() + 16);
-
-            if (boolsInParallel <= 0) boolsInParallel = 1;
 
             paramsToOptimize = numbersToOptimize.Concat(boolsToOptimize).ToList();
 
@@ -83,15 +84,15 @@ namespace VF.Service {
                 vrcPrm.SetNetworkSynced(false);
             }
 
-            var syncPointer = fx.NewInt("SyncPointer", synced: true);
+            var syncPointer = fx.NewInt("SyncPointer", addToParamFile: true);
             VFAInteger syncData = null;
             if (numbersToOptimize.Any()) {
-                syncData = fx.NewInt("SyncDataNum", synced: true);
+                syncData = fx.NewInt("SyncDataNum", addToParamFile: true);
             }
             var syncBools = new List<VFABool>();
             if (boolBatches.Any()) {
                 syncBools.AddRange(Enumerable.Range(0, boolsInParallel)
-                    .Select(i => fx.NewBool("SyncDataBool", synced: true)));
+                    .Select(i => fx.NewBool("SyncDataBool", addToParamFile: true)));
             }
 
             var layer = fx.NewLayer("Parameter Compressor");
