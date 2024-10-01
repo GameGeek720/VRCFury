@@ -1,4 +1,4 @@
-﻿using System;
+﻿﻿using System;
 using System.Collections.Generic;
 using System.Collections.Immutable;
 using System.Linq;
@@ -43,7 +43,7 @@ namespace VF.Feature {
             }
 
             if (paramz.GetRaw().CalcTotalCost() <= maxBits) {
-                Debug.Log($"No Parameter Optimization required");
+                Debug.Log($"No Parameter Compressing Required");
                 return;
             }
 
@@ -52,12 +52,17 @@ namespace VF.Feature {
             }
 
             var paramsToOptimize = GetParamsToOptimize();
-            var boolsInParallel = 8;
 
             var numbersToOptimize =
                 paramsToOptimize.Where(i => i.type != VRCExpressionParameters.ValueType.Bool).ToList();
             var boolsToOptimize =
                 paramsToOptimize.Where(i => i.type == VRCExpressionParameters.ValueType.Bool).ToList();
+            
+
+            var boolsInParallel = maxBits - (paramz.GetRaw().CalcTotalCost() - numbersToOptimize.Count() * 8 - boolsToOptimize.Count() + 16);
+
+            if (boolsInParallel <= 0) boolsInParallel = 1;
+
             if (boolsToOptimize.Count <= boolsInParallel) boolsToOptimize.Clear();
             var boolBatches = boolsToOptimize.Select(i => i.name)
                 .Chunk(boolsInParallel)
@@ -226,38 +231,6 @@ namespace VF.Feature {
             });
 
             return paramsToOptimize.Take(255).ToList();
-        }
-
-        private IList<(string name,VRCExpressionParameters.ValueType type)> GetBoolParamsToOptimize() {
-            var paramsToOptimize = new HashSet<(string,VRCExpressionParameters.ValueType)>();
-            void AttemptToAdd(string paramName) {
-                if (string.IsNullOrEmpty(paramName)) return;
-                
-                var vrcParam =paramz.GetParam(paramName);
-                if (vrcParam == null) return;
-                var networkSynced = (bool)networkSyncedField.GetValue(vrcParam);
-                if (!networkSynced) return;
-
-                if (vrcParam.valueType != VRCExpressionParameters.ValueType.Bool) {
-                    return;
-                }
-
-                paramsToOptimize.Add((paramName, vrcParam.valueType));
-            }
-
-            menu.GetRaw().ForEachMenu(ForEachItem: (control, list) => {
-                if (control.type == VRCExpressionsMenu.Control.ControlType.RadialPuppet) {
-                    AttemptToAdd(control.GetSubParameter(0)?.name);
-                }
-                if (control.type == VRCExpressionsMenu.Control.ControlType.Button
-                    || control.type == VRCExpressionsMenu.Control.ControlType.Toggle) {
-                    AttemptToAdd(control.parameter?.name);
-                }
-
-                return Continue;
-            });
-
-            return paramsToOptimize.ToList();
         }
 
         [FeatureEditor]
