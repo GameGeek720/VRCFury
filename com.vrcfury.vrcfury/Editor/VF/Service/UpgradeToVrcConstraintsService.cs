@@ -32,6 +32,7 @@ namespace VF.Service {
 #if VRCSDK_HAS_VRCCONSTRAINTS
         [VFAutowired] private readonly ClipRewriteService clipRewriteService;
         [VFAutowired] private readonly VFGameObject avatarObject;
+        [VFAutowired] private readonly AnimatorHolderService animators;
 
         [FeatureBuilderAction(FeatureOrder.UpgradeToVrcConstraints)]
         public void Apply() {
@@ -75,14 +76,10 @@ namespace VF.Service {
                 RewriteBinding(binding, avatarObject)
             ));
 
-            foreach (var animator in avatarObject.GetComponentsInSelfAndChildren<Animator>()) {
-                if (animator.owner() == avatarObject) continue;
-                if (animator.runtimeAnimatorController == null) continue;
-                var clone = VFController.CopyAndLoadController(animator.runtimeAnimatorController, VRCAvatarDescriptor.AnimLayerType.Base);
-                clone.GetRaw().Rewrite(AnimationRewriter.RewriteBinding(binding =>
-                    RewriteBinding(binding, animator.owner())
+            foreach (var (owner,controller) in animators.GetSubControllers()) {
+                controller.GetRaw().Rewrite(AnimationRewriter.RewriteBinding(binding =>
+                    RewriteBinding(binding, owner)
                 ));
-                animator.runtimeAnimatorController = clone;
             }
 
             var avatarDescriptor = avatarObject.GetComponent<VRCAvatarDescriptor>();

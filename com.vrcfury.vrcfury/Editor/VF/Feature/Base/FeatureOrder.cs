@@ -114,13 +114,10 @@ namespace VF.Feature.Base {
 
         MarkThingsAsDirtyJustInCase,
         
-        RemoveJunkAnimators,
+        // Needs to happen after everything is done using the animator, and before SaveAssets
+        ResetAnimatorAfter,
 
         SaveAssets,
-        
-        // Needs to happen after everything is done using the animator
-        ResetAnimatorAfter,
-        
         Validation,
         HideAddedComponents,
         BackupAfter,
