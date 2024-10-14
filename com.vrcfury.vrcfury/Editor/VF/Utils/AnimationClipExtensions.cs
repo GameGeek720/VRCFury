@@ -217,7 +217,7 @@ namespace VF.Utils {
 
         public static void SetCurve(this AnimationClip clip, string path, Type type, string propertyName, FloatOrObjectCurve curve) {
             EditorCurveBinding binding;
-            if (curve.IsFloat) {
+            if (curve == null || curve.IsFloat) {
                 binding = EditorCurveBinding.FloatCurve(path, type, propertyName);
             } else {
                 binding = EditorCurveBinding.PPtrCurve(path, type, propertyName);
@@ -244,7 +244,7 @@ namespace VF.Utils {
                 "__vrcf_length",
                 typeof(GameObject),
                 "m_IsActive",
-                FloatOrObjectCurve.DummyFloatCurve(length)
+                length == 0 ? null : FloatOrObjectCurve.DummyFloatCurve(length)
             );
         }
         
@@ -258,9 +258,9 @@ namespace VF.Utils {
         }
 
         public static void SetScale(this AnimationClip clip, VFGameObject obj, Vector3 scale) {
-            clip.SetCurve(obj.transform, "m_LocalScale.x", scale.x);
-            clip.SetCurve(obj.transform, "m_LocalScale.y", scale.y);
-            clip.SetCurve(obj.transform, "m_LocalScale.z", scale.z);
+            clip.SetCurve((Transform)obj, "m_LocalScale.x", scale.x);
+            clip.SetCurve((Transform)obj, "m_LocalScale.y", scale.y);
+            clip.SetCurve((Transform)obj, "m_LocalScale.z", scale.z);
         }
 
         public static int GetLengthInFrames(this AnimationClip clip) {

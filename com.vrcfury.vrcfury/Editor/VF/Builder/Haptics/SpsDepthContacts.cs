@@ -13,6 +13,7 @@ namespace VF.Builder.Haptics {
         public readonly Lazy<VFAFloat> closestDistanceMeters;
         public readonly Lazy<VFAFloat> closestDistancePlugLengths;
         public readonly Lazy<VFAFloat> closestDistanceLocal;
+        public readonly Lazy<VFAFloat> velocity;
         public readonly VFBlendTreeDirect directTree;
 
         public SpsDepthContacts(
@@ -22,6 +23,7 @@ namespace VF.Builder.Haptics {
             VFBlendTreeDirect directTree,
             BlendtreeMath math,
             ControllerManager controller,
+            FrameTimeService frameTimeService,
             bool useHipAvoidance,
             VFAFloat scaleFactor,
             float inputPlugLength = -1
@@ -49,6 +51,40 @@ namespace VF.Builder.Haptics {
             closestDistanceMeters = new Lazy<VFAFloat>(() => MakeClosest("Dist/Meters", o => o.distanceMeters));
             closestDistancePlugLengths = new Lazy<VFAFloat>(() => MakeClosest("Dist/PlugLens", o => o.distancePlugLengths));
             closestDistanceLocal = new Lazy<VFAFloat>(() => MakeClosest("Dist/Local", o => o.distanceLocal));
+
+            velocity = new Lazy<VFAFloat>(() => {
+
+                var currentDist = closestDistancePlugLengths.Value;
+                var currentTime = frameTimeService.GetTimeSinceLoad();
+                var lastDist = math.Buffer(currentDist, minSupported:-100, maxSupported:100);
+                var lastTime = math.Buffer(currentTime);
+                var diffDistEarly = controller.MakeAap("diff");
+                math.CopyInPlace(currentDist, diffDistEarly);
+                math.CopyInPlace(lastDist, diffDistEarly, -1);
+                var diffDist = math.Buffer(diffDistEarly, minSupported:-100, maxSupported:100);
+                var diffTime = math.Subtract(currentTime, lastTime);
+
+                var latchedDiffDist = controller.MakeAap("latchedDiffDist");
+                var latchedDiffTime = controller.MakeAap("latchedDiffTime");
+                var update = VFBlendTreeDirect.Create("Update");
+                update.Add(BlendtreeMath.MakeCopier(diffDist, latchedDiffDist, minSupported:-100, maxSupported:100));
+                update.Add(BlendtreeMath.MakeCopier(diffTime, latchedDiffTime));
+                var maintain = VFBlendTreeDirect.Create("Maintain");
+                maintain.Add(BlendtreeMath.MakeCopier(latchedDiffDist, latchedDiffDist, minSupported:-100, maxSupported:100));
+                maintain.Add(BlendtreeMath.MakeCopier(latchedDiffTime, latchedDiffTime));
+                math.SetValueWithConditions(
+                    (update, BlendtreeMath.Not(BlendtreeMath.Equals(diffDist, 0, epsilon: 0.0001f))),
+                    (maintain, null)
+                );
+
+                var latchedDiffDistBuffered1 = math.Buffer(latchedDiffDist, minSupported:-100, maxSupported:100);
+                var latchedDiffDistBuffered2 = math.Buffer(latchedDiffDistBuffered1, minSupported:-100, maxSupported:100);
+                var latchedDiffTimeInverted2 = math.Invert("latchedDiffTimeInverted2", latchedDiffTime);
+
+                var output = controller.MakeAap($"{paramPrefix}/Dist/PlugLens/Vel");
+                math.MultiplyInPlace(output, latchedDiffTimeInverted2, latchedDiffDistBuffered2);
+                return output;
+            });
         }
 
         public class TipRootPair {
