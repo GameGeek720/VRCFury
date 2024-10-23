@@ -108,20 +108,73 @@ namespace VF.Utils {
                 }
             }
 #endif
+
+            if (ext.originalSourceClip != null) {
+                var nonStandardEulerOrders = new Dictionary<string, int>();
+                using (var so = new SerializedObject(ext.originalSourceClip)) {
+                    so.Update();
+                    void ProcessArray(string arrayPath) {
+                        var length = so.FindProperty(arrayPath)?.arraySize ?? 0;
+                        if (length == 0) return;
+                        foreach (var i in Enumerable.Range(0, length)) {
+                            var rotationOrderProp = so.FindProperty($"{arrayPath}.Array.data[{i}].curve.m_RotationOrder");
+                            if (rotationOrderProp == null || rotationOrderProp.propertyType != SerializedPropertyType.Integer) continue;
+                            var rotationOrder = rotationOrderProp.intValue;
+                            if (rotationOrder == 4) continue;
+                            var pathProp = so.FindProperty($"{arrayPath}.Array.data[{i}].path");
+                            if (pathProp == null || pathProp.propertyType != SerializedPropertyType.String) continue;
+                            var path = pathProp.stringValue;
+                            nonStandardEulerOrders[path] = rotationOrder;
+                        }
+                    }
+                    ProcessArray("m_EulerCurves");
+                    ProcessArray("m_EditorCurves");
+                    ProcessArray("m_EulerEditorCurves");
+                }
+                if (nonStandardEulerOrders.Any()) {
+                    using (var so = new SerializedObject(clip)) {
+                        so.Update();
+                        var changedOne = false;
+                        void ProcessArray(string arrayPath) {
+                            var length = so.FindProperty(arrayPath)?.arraySize ?? 0;
+                            if (length == 0) return;
+                            foreach (var i in Enumerable.Range(0, length)) {
+                                var pathProp = so.FindProperty($"{arrayPath}.Array.data[{i}].path");
+                                if (pathProp == null || pathProp.propertyType != SerializedPropertyType.String) continue;
+                                var path = pathProp.stringValue;
+                                if (nonStandardEulerOrders.TryGetValue(path, out var rotationOrder)) {
+                                    var rotationOrderProp = so.FindProperty($"{arrayPath}.Array.data[{i}].curve.m_RotationOrder");
+                                    if (rotationOrderProp == null || rotationOrderProp.propertyType != SerializedPropertyType.Integer) continue;
+                                    rotationOrderProp.intValue = rotationOrder;
+                                    changedOne = true;
+                                }
+                            }
+                        }
+                        ProcessArray("m_EulerCurves");
+                        ProcessArray("m_EditorCurves");
+                        ProcessArray("m_EulerEditorCurves");
+                        if (changedOne) {
+                            so.ApplyModifiedPropertiesWithoutUndo();
+                        }
+                    }
+                }
+            }
         }
         private static AnimationClipExt GetExt(AnimationClip clip) {
             if (clipDb.TryGetValue(clip, out var cached)) return cached;
 
             var ext = clipDb[clip] = new AnimationClipExt();
+            ext.originalSourceClip = clip;
 
             if (AssetDatabase.IsMainAsset(clip)) {
                 var path = AssetDatabase.GetAssetPath(clip);
-                if (!string.IsNullOrEmpty(path)) {
-                    if (Path.GetFileName(path).StartsWith("proxy_")) {
-                        ext.originalSourceIsProxyClip = true;
-                    }
-                    ext.originalSourceClip = clip;
+                if (string.IsNullOrEmpty(path)) {
+                    ext.changedFromOriginalSourceClip = true;
+                } else if (Path.GetFileName(path).StartsWith("proxy_")) {
+                    ext.originalSourceIsProxyClip = true;
                 }
+            } else {
+                ext.changedFromOriginalSourceClip = true;
             }
 
             // Don't use ToDictionary, since animationclips can have duplicate bindings somehow
