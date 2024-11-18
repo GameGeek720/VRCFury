@@ -21,7 +21,7 @@ namespace VF.Service {
         public Func<int> currentMenuSortPosition;
         public Func<VFGameObject> currentComponentObject;
         public VFAFloat currentTriggerParam;
-        public FeatureBuilder currentFeature;
+        public Func<FeatureBuilder> currentFeature;
         public Func<string> currentFeatureObjectPath;
     }
 }
