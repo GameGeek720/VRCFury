@@ -154,8 +154,7 @@ namespace VF.Utils {
             string name,
             Func<VRCExpressionsMenu.Control,bool> predicate = null
         ) {
-            string Normalize(string a) =>
-                Regex.Replace(Regex.Replace(a.ToLower(), @"<.*?>", ""), @"\s\s+", " ").Trim();
+            string Normalize(string a) => a.ToLower().RemoveHtmlTags().NormalizeSpaces();
             string[] GetSlugs(string a) => Regex.Replace(a, @"<.*?>", "`")
                 .Split('`')
                 .Select(slug => Normalize(slug))
