@@ -14,7 +14,7 @@ using static VRC.SDK3.Avatars.ScriptableObjects.VRCExpressionsMenu.Control;
 
 namespace VF.Service {
     [VFService]
-    internal class DriveOtherTypesFromFloatService {
+    internal class TriggerDriverService {
         [VFAutowired] private readonly GlobalsService globals;
         [VFAutowired] private readonly ControllersService controllers;
         private ControllerManager fx => controllers.GetFx();
@@ -106,22 +106,9 @@ namespace VF.Service {
                 value = value
             });
         }
-        
-        private readonly List<(VFAFloat,string,float)> drivenParams = new List<(VFAFloat,string,float)>();
-
-        public void DriveAutoLater(VFAFloat input, string output, float value) {
-            drivenParams.Add((input, output, value));
-        }
 
         [FeatureBuilderAction(FeatureOrder.DriveNonFloatTypes)]
         public void DriveNonFloatTypes() {
-            var nonFloatParams = new HashSet<string>();
-            foreach (var c in controllers.GetAllUsedControllers()) {
-                nonFloatParams.UnionWith(c.GetRaw().parameters
-                    .Where(p => p.type != AnimatorControllerParameterType.Float || c.GetType() != VRCAvatarDescriptor.AnimLayerType.FX)
-                    .Select(p => p.name));
-            }
-
             List<(VFAFloat, string, float)> triggers = new();
             foreach (var trigger in drivenTags) {
                 var (param, tag, target, feature) = trigger;
@@ -154,23 +141,6 @@ namespace VF.Service {
             foreach (var trigger in triggers) {
                 var (triggerParam, param, value) = trigger;
                 Drive(triggerParam, param, value, false);
-            }
-
-            var rewrites = new Dictionary<string, string>();
-            foreach (var (floatParam,targetParam,onValue) in drivenParams) {
-                if (nonFloatParams.Contains(targetParam)) {
-                    Drive(floatParam, targetParam, onValue);
-                } else {
-                    rewrites.Add(floatParam, targetParam);
-                }
-            }
-
-            if (rewrites.Count > 0) {
-                foreach (var c in controllers.GetAllUsedControllers()) {
-                    c.GetRaw().RewriteParameters(from =>
-                        rewrites.TryGetValue(from, out var to) ? to : from
-                    );
-                }
             }
         }
     }

@@ -16,7 +16,7 @@ namespace VF.Actions {
         [VFAutowired] [CanBeNull] private readonly ControllersService controllers;
         private ControllerManager fx => controllers.GetFx();
         [VFAutowired] [CanBeNull] private readonly GlobalsService globals;
-        [VFAutowired] [CanBeNull] private readonly DriveOtherTypesFromFloatService driveOtherTypesFromFloatService;
+        [VFAutowired] [CanBeNull] private readonly TriggerDriverService driveOtherTypesFromFloatService;
         
         public AnimationClip Build(SyncParamAction model, string actionName) {
             var onClip = NewClip();
