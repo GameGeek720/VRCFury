@@ -117,7 +117,7 @@ namespace VF.Service {
             var settings = GetBuildSettings();
 
             if (settings.ignoredBroken) {
-                fx.NewBool($"VF/BrokenWd", usePrefix: false, addToParamFile: true, networkSynced: false);
+                fx.NewBool($"VF/BrokenWd", usePrefix: false, synced: true, networkSynced: false);
             }
 
             foreach (var controller in controllers.GetAllUsedControllers()) {

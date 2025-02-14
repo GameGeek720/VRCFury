@@ -48,9 +48,9 @@ namespace VF.Feature {
             var numDigits = digits.Length;
             var numDigitSlots = 10;
 
-            var paramSecuritySync = fx.NewBool("SecurityLockSync", addToParamFile: true);
+            var paramSecuritySync = fx.NewBool("SecurityLockSync", synced: true);
             // This doesn't actually need synced, but vrc gets annoyed that the menu is using an unsynced param
-            var paramInput = fx.NewInt("SecurityInput", addToParamFile: true, networkSynced: false);
+            var paramInput = fx.NewInt("SecurityInput", synced: true, networkSynced: false);
             
             // Because this is created lazily on demand from some other feature, but we want the position in the menu
             // to be based on where this security lock was placed

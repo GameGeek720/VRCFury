@@ -122,9 +122,9 @@ namespace VF.Utils {
             return paramManager.Invoke();
         }
 
-        public VFABool NewBool(string name, bool addToParamFile = false, bool networkSynced = true, bool def = false, bool saved = false, bool usePrefix = true) {
+        public VFABool NewBool(string name, bool synced = false, bool networkSynced = true, bool def = false, bool saved = false, bool usePrefix = true) {
             if (usePrefix) name = makeUniqueParamName(name);
-            if (addToParamFile) {
+            if (synced) {
                 var param = new VRCExpressionParameters.Parameter();
                 param.name = name;
                 param.valueType = VRCExpressionParameters.ValueType.Bool;
@@ -135,9 +135,9 @@ namespace VF.Utils {
             }
             return ctrl.NewBool(name, def);
         }
-        public VFAInteger NewInt(string name, bool addToParamFile = false, bool networkSynced = true, int def = 0, bool saved = false, bool usePrefix = true) {
+        public VFAInteger NewInt(string name, bool synced = false, bool networkSynced = true, int def = 0, bool saved = false, bool usePrefix = true) {
             if (usePrefix) name = makeUniqueParamName(name);
-            if (addToParamFile) {
+            if (synced) {
                 var param = new VRCExpressionParameters.Parameter();
                 param.name = name;
                 param.valueType = VRCExpressionParameters.ValueType.Int;
@@ -148,12 +148,12 @@ namespace VF.Utils {
             }
             return ctrl.NewInt(name, def);
         }
-        public VFAFloat NewFloat(string name, bool addToParamFile = false, bool networkSynced = true, float def = 0, bool saved = false, bool usePrefix = true) {
+        public VFAFloat NewFloat(string name, bool synced = false, bool networkSynced = true, float def = 0, bool saved = false, bool usePrefix = true) {
             if (usePrefix) {
                 name = Regex.Replace(name, @"^VF\d+_", "");
                 name = makeUniqueParamName(name);
             }
-            if (addToParamFile) {
+            if (synced) {
                 var param = new VRCExpressionParameters.Parameter();
                 param.name = name;
                 param.valueType = VRCExpressionParameters.ValueType.Float;

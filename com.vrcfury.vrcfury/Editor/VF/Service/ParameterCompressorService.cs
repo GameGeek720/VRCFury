@@ -81,15 +81,15 @@ namespace VF.Service {
                 vrcPrm.SetNetworkSynced(false);
             }
 
-            var syncPointer = fx.NewInt("SyncPointer", addToParamFile: true);
+            var syncPointer = fx.NewInt("SyncPointer", synced: true);
             VFAInteger syncData = null;
             if (numbersToOptimize.Any()) {
-                syncData = fx.NewInt("SyncDataNum", addToParamFile: true);
+                syncData = fx.NewInt("SyncDataNum", synced: true);
             }
             var syncBools = new List<VFABool>();
             if (boolBatches.Any()) {
                 syncBools.AddRange(Enumerable.Range(0, boolsInParallel)
-                    .Select(i => fx.NewBool("SyncDataBool", addToParamFile: true)));
+                    .Select(i => fx.NewBool("SyncDataBool", synced: true)));
             }
 
             var layer = fx.NewLayer("Parameter Compressor");

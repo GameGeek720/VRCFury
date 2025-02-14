@@ -112,9 +112,9 @@ namespace VF.Feature {
             var addMenuItem = model.addMenuItem && (hasTitle || hasIcon);
             var networkSyncParam = !getIsOnlyLocalToggle();
 
-            var addToParamFile = addMenuItem || networkSyncParam;
+            var synced = addMenuItem || networkSyncParam;
             if (model.useGlobalParam && FullControllerBuilder.VRChatGlobalParams.Contains(model.globalParam)) {
-                addToParamFile = false;
+                synced = false;
             }
 
             var (paramName, usePrefixOnParam, menuItemAlreadyMade) = GetParamName();
@@ -124,7 +124,7 @@ namespace VF.Feature {
             if (model.slider) {
                 var param = fx.NewFloat(
                     paramName,
-                    addToParamFile: addToParamFile,
+                    synced: synced,
                     networkSynced: networkSyncParam,
                     saved: model.saved,
                     def: model.defaultSliderValue,
@@ -145,13 +145,13 @@ namespace VF.Feature {
                 }
                 this.param = param;
             } else if (model.useInt) {
-                var param = fx.NewInt(paramName, addToParamFile: true, saved: model.saved, def: model.defaultOn ? 1 : 0, usePrefix: usePrefixOnParam);
+                var param = fx.NewInt(paramName, synced: true, saved: model.saved, def: model.defaultOn ? 1 : 0, usePrefix: usePrefixOnParam);
                 onCase = param.IsNotEqualTo(0);
                 drive = (state,on) => state.Drives(param, on ? 1 : 0);
                 defaultOn = model.defaultOn;
                 this.param = param;
             } else {
-                var param = fx.NewBool(paramName, addToParamFile: addToParamFile, networkSynced: networkSyncParam, saved: model.saved, def: model.defaultOn, usePrefix: usePrefixOnParam);
+                var param = fx.NewBool(paramName, synced: synced, networkSynced: networkSyncParam, saved: model.saved, def: model.defaultOn, usePrefix: usePrefixOnParam);
                 onCase = param.IsTrue();
                 drive = (state,on) => state.Drives(param, on ? 1 : 0);
                 defaultOn = model.defaultOn;
@@ -327,7 +327,7 @@ namespace VF.Feature {
                 foreach(var p in GetDriveGlobalParams()) {
                     var driveGlobal = fx.NewBool(
                         p,
-                        addToParamFile: false,
+                        synced: false,
                         saved: false,
                         def: false,
                         usePrefix: false

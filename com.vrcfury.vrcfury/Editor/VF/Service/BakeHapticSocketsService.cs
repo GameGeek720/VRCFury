@@ -50,7 +50,7 @@ namespace VF.Service {
             VFABool autoOn = null;
             AnimationClip autoOnClip = null;
             if (enableAuto) {
-                autoOn = fx.NewBool("autoMode", addToParamFile: true, networkSynced: false, saved: saved);
+                autoOn = fx.NewBool("autoMode", synced: true, networkSynced: false, saved: saved);
                 menu.NewMenuToggle($"{spsOptions.GetOptionsPath()}/<b>Auto Mode<\\/b>\n<size=20>Activates hole nearest to a VRCFury plug", autoOn);
                 autoOnClip = clipFactory.NewClip("Enable SPS Auto Contacts");
                 var directTree = directTreeService.Create($"Auto Mode Toggle");
@@ -66,7 +66,7 @@ namespace VF.Service {
                 .Length >= 1;
             VFABool stealthOn = null;
             if (enableStealth) {
-                stealthOn = fx.NewBool("stealth", addToParamFile: true, saved: saved);
+                stealthOn = fx.NewBool("stealth", synced: true, saved: saved);
                 menu.NewMenuToggle($"{spsOptions.GetOptionsPath()}/<b>Stealth Mode<\\/b>\n<size=20>Only local haptics,\nInvisible to others", stealthOn);
             }
             
@@ -76,7 +76,7 @@ namespace VF.Service {
                 .Length >= 2;
             VFABool multiOn = null;
             if (enableMulti) {
-                multiOn = fx.NewBool("multi", addToParamFile: true, networkSynced: false, saved: saved);
+                multiOn = fx.NewBool("multi", synced: true, networkSynced: false, saved: saved);
                 var multiFolder = $"{spsOptions.GetOptionsPath()}/<b>Dual Mode<\\/b>\n<size=20>Allows 2 active sockets";
                 menu.NewMenuToggle($"{multiFolder}/Enable Dual Mode", multiOn);
                 menu.NewMenuButton($"{multiFolder}/<b>WARNING<\\/b>\n<size=20>Everyone else must use SPS or TPS - NO DPS!");
@@ -97,7 +97,7 @@ namespace VF.Service {
                     
                     VFABool toggleParam = null;
                     if (socket.addMenuItem) {
-                        toggleParam = fx.NewBool(name, addToParamFile: true, saved: saved);
+                        toggleParam = fx.NewBool(name, synced: true, saved: saved);
                         var icon = socket.menuIcon?.Get();
                         menu.NewMenuToggle($"{spsOptions.GetMenuPath()}/{name}", toggleParam, icon: icon);
                     }
