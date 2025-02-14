@@ -20,7 +20,6 @@ namespace VF.Service {
         public Func<string> currentFeatureClipPrefixProvider;
         public Func<int> currentMenuSortPosition;
         public Func<VFGameObject> currentComponentObject;
-        public VFAFloat currentTriggerParam;
         public Func<FeatureBuilder> currentFeature;
         public Func<string> currentFeatureObjectPath;
     }
