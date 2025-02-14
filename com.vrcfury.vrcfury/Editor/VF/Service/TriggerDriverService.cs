@@ -1,15 +1,10 @@
-using System;
 using System.Collections.Generic;
 using System.Linq;
 using UnityEngine;
-using VF.Builder;
 using VF.Feature;
 using VF.Feature.Base;
 using VF.Injector;
 using VF.Utils;
-using VF.Utils.Controller;
-using VRC.SDK3.Avatars.Components;
-using VRC.SDKBase;
 using static VRC.SDK3.Avatars.ScriptableObjects.VRCExpressionsMenu.Control;
 
 namespace VF.Service {
@@ -32,8 +27,8 @@ namespace VF.Service {
             drivenToggles.Add((clip, toggle, value));
         }
 
-        public void DriveTag(AnimationClip clip, string tag, float value, FeatureBuilder originFeature) {
-            drivenTags.Add((clip, tag, value, originFeature));
+        public void DriveTag(AnimationClip clip, string tag, float value) {
+            drivenTags.Add((clip, tag, value, globals.currentFeature()));
         }
 
         [FeatureBuilderAction(FeatureOrder.EvaluateTriggerParams)]

@@ -2,7 +2,6 @@
 using UnityEditor;
 using UnityEngine;
 using UnityEngine.UIElements;
-using VF.Builder;
 using VF.Feature.Base;
 using VF.Injector;
 using VF.Inspector;
@@ -17,6 +16,7 @@ namespace VF.Actions {
         
         public AnimationClip Build(SyncParamAction model, string actionName) {
             var onClip = NewClip();
+            if (triggerDriverService == null) return onClip;
             onClip.SetCurve("TRIGGER_DUMMY",typeof(GameObject),"TRIGGER_DUMMY",1);
             triggerDriverService.DriveSyncParam(onClip, model.param, model.value);
             return onClip;
