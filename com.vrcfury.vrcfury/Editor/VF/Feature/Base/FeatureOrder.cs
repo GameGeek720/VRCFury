@@ -46,6 +46,8 @@ namespace VF.Feature.Base {
         // Needs to run before ArmatureLinkBuilder, which reads active state of objects
         ApplyRestState3,
         
+        // Needs to happen before DriveNonFloatTypes
+        EvaluateTriggerParams,
         // Needs to happen after all controller params (and their types) are in place
         DriveNonFloatTypes,
         

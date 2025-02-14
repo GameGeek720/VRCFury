@@ -27,8 +27,8 @@ namespace VF.Actions {
                 globals.currentTriggerParam = fx.NewFloat(actionName + " (Param Trigger)");
                 onClip.SetAap(globals.currentTriggerParam, 1);
             }
-
-            driveOtherTypesFromFloatService.DriveTag(globals.currentTriggerParam, model.tag, model.value, globals.currentFeature());
+            onClip.SetCurve("TRIGGER_DUMMY",typeof(GameObject),"TRIGGER_DUMMY",1);
+            driveOtherTypesFromFloatService.DriveTag(onClip, globals.currentTriggerParam, model.tag, model.value, globals.currentFeature());
             return onClip;
         }
 

@@ -17,6 +17,7 @@ namespace VF.Service {
     internal class TriggerDriverService {
         [VFAutowired] private readonly GlobalsService globals;
         [VFAutowired] private readonly ControllersService controllers;
+        [VFAutowired] private readonly FloatToDriverService floatToDriverService;
         private ControllerManager fx => controllers.GetFx();
         [VFAutowired] private readonly MenuService menuService;
         private MenuManager menu => menuService.GetMenu();
@@ -26,23 +27,23 @@ namespace VF.Service {
         private readonly Dictionary<string, (VFAInteger,int,VFTransition)> currentSettings = new Dictionary<string, (VFAInteger,int,VFTransition)>();
         private readonly Dictionary<VFAFloat, VFState> createdStates = new Dictionary<VFAFloat, VFState>();
 
-        private readonly List<(VFAFloat,string,float)> drivenSyncParams = new List<(VFAFloat,string,float)>();
-        private readonly List<(VFAFloat,string,float)> drivenToggles = new List<(VFAFloat,string,float)>();
-        private readonly List<(VFAFloat,string,float,FeatureBuilder)> drivenTags = new List<(VFAFloat,string,float,FeatureBuilder)>();
+        private readonly List<(AnimationClip,VFAFloat,string,float)> drivenSyncParams = new ();
+        private readonly List<(AnimationClip,VFAFloat,string,float)> drivenToggles = new ();
+        private readonly List<(AnimationClip,VFAFloat,string,float,FeatureBuilder)> drivenTags = new ();
 
-        public void DriveSyncParam(VFAFloat src, string param, float value) {
-            drivenSyncParams.Add((src, param, value));
+        public void DriveSyncParam(AnimationClip clip, VFAFloat triggerParam, string param, float value) {
+            drivenSyncParams.Add((clip, triggerParam, param, value));
         }
 
-        public void DriveToggle(VFAFloat src, string toggle, float value) {
-            drivenToggles.Add((src, toggle, value));
+        public void DriveToggle(AnimationClip clip, VFAFloat triggerParam, string toggle, float value) {
+            drivenToggles.Add((clip, triggerParam, toggle, value));
         }
 
-        public void DriveTag(VFAFloat src, string tag, float value, FeatureBuilder originFeature) {
-            drivenTags.Add((src, tag, value, originFeature));
+        public void DriveTag(AnimationClip clip, VFAFloat triggerParam, string tag, float value, FeatureBuilder originFeature) {
+            drivenTags.Add((clip, triggerParam, tag, value, originFeature));
         }
 
-        public void Drive(VFAFloat input, string output, float value, bool reset = true) {
+        public void DriveOld(VFAFloat input, string output, float value, bool reset = true) {
             if (layer == null) {
                 layer = fx.NewLayer("Cross-Type Param Driver");
                 idle = layer.NewState("Idle");
@@ -107,40 +108,42 @@ namespace VF.Service {
             });
         }
 
-        [FeatureBuilderAction(FeatureOrder.DriveNonFloatTypes)]
+        [FeatureBuilderAction(FeatureOrder.EvaluateTriggerParams)]
         public void DriveNonFloatTypes() {
-            List<(VFAFloat, string, float)> triggers = new();
+            List<(AnimationClip, VFAFloat, string, float)> triggers = new();
             foreach (var trigger in drivenTags) {
-                var (param, tag, target, feature) = trigger;
+                var (clip, triggerParam, tag, target, feature) = trigger;
                 foreach (var other in globals.allBuildersInRun
                      .OfType<ToggleBuilder>()
                      .Where(b => b != feature)) {
                         var otherTags = other.GetTags();
                         
                         if (otherTags.Contains(tag)) {
-                            if (target == 0) triggers.Add((param, other.getParam(), 0));
-                            else triggers.Add((param, other.getParam(), other.model.slider ? target : 1));
+                            if (target == 0) triggers.Add((clip, triggerParam, other.getParam(), 0));
+                            else triggers.Add((clip, triggerParam, other.getParam(), other.model.slider ? target : 1));
                         }
                 }
             }
 
             foreach (var trigger in drivenToggles) {
-                var (param, path, target) = trigger;
+                var (clip, triggerParam, path, target) = trigger;
                 var control = menu.GetMenuItem(path);
                 if (control == null) continue;
-                if (target == 0) triggers.Add((param, control.parameter.name, 0));
-                else if (control.type == ControlType.RadialPuppet) triggers.Add((param, control.parameter.name, target));
-                else triggers.Add((param, control.parameter.name, control.value));
+                if (target == 0) triggers.Add((clip, triggerParam, control.parameter.name, 0));
+                else if (control.type == ControlType.RadialPuppet) triggers.Add((clip, triggerParam, control.parameter.name, target));
+                else triggers.Add((clip, triggerParam, control.parameter.name, control.value));
             }
 
             foreach (var trigger in drivenSyncParams) {
-                var (triggerParam, param, target) = trigger;
-                triggers.Add((triggerParam, param, target));
+                var (clip, triggerParam, param, target) = trigger;
+                triggers.Add((clip, triggerParam, param, target));
             }
 
             foreach (var trigger in triggers) {
-                var (triggerParam, param, value) = trigger;
-                Drive(triggerParam, param, value, false);
+                var (clip, triggerParam, param, value) = trigger;
+                //DriveOld(triggerParam, param, value, false);
+                var newTriggerParam = floatToDriverService.Drive(param, value, null);
+                clip.SetAap(newTriggerParam, 1);
             }
         }
     }
