@@ -113,6 +113,8 @@ namespace VF.Feature.Base {
         FixMipmapStreaming,
         FixAudio,
         FixMenuIconTextures,
+        
+        AddDebugVrcParameter,
 
         MarkThingsAsDirtyJustInCase,
         
