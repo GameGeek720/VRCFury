@@ -53,17 +53,10 @@ namespace VF.Service {
                 var lastState_ = fx.NewInt($"{output}_lastState");
                 var off = layer.NewState($"{output} = 0");
                 off.TransitionsToExit().When(fx.Always());
-                var driver = off.GetRaw().VAddStateMachineBehaviour<VRCAvatarParameterDriver>();
+                off.Drives(lastState_, 0);
                 var t = idle.TransitionsTo(off).When(lastState_.IsGreaterThan(0));
-                driver.parameters.Add(new VRC_AvatarParameterDriver.Parameter() {
-                    name = lastState_,
-                    value = 0
-                });
                 if (reset) {
-                    driver.parameters.Add(new VRC_AvatarParameterDriver.Parameter() {
-                        name = output,
-                        value = 0
-                    });
+                    off.Drives(output, 0);
                 }
                 currentSettings[output] = (lastState_, 0, t);
             }
@@ -90,22 +83,11 @@ namespace VF.Service {
                 }
                 state.TransitionsToExit().When(fx.Always());
 
-                var lastStateDriver = state.GetRaw().VAddStateMachineBehaviour<VRCAvatarParameterDriver>();
-                lastStateDriver.parameters.Add(new VRC_AvatarParameterDriver.Parameter() {
-                    name = lastState.Name(),
-                    value = myNumber
-                });
+                state.Drives(lastState.Name(), myNumber);
 
                 createdStates[input] = state;
-            } else {
-                var rawState = createdStates[input].GetRaw();
-                //rawState.name = rawState.name.Insert(rawState.name.IndexOf(" (from"),  $", {output} = {value}");
             }
-            var myDriver = createdStates[input].GetRaw().VAddStateMachineBehaviour<VRCAvatarParameterDriver>();
-            myDriver.parameters.Add(new VRC_AvatarParameterDriver.Parameter() {
-                name = output,
-                value = value
-            });
+            createdStates[input].Drives(output, value);
         }
 
         [FeatureBuilderAction(FeatureOrder.EvaluateTriggerParams)]
