@@ -203,25 +203,6 @@ namespace VF.Feature {
             float inTime,
             float outTime
         ) {
-            State originalInAction = null;
-
-            if (GetExclusiveTags().Count() > 0) {
-                originalInAction = new State();
-                foreach (var a in inAction.actions) {
-                    originalInAction.actions.Add(a);
-                }
-            }
-
-            foreach(var tag in GetExclusiveTags()) {
-                var tagAction = new TagStateAction();
-                tagAction.tag = tag;
-                tagAction.value = 0;
-                if (model.hasTransition) {
-                    inAction.actions.Add(tagAction);
-                } else {
-                    action.actions.Add(tagAction);
-                }
-            }
 
             if (model.securityEnabled) {
                 var securityLockUnlocked = globals.allBuildersInRun
@@ -253,7 +234,7 @@ namespace VF.Feature {
                 if (!new AnimatorIterator.Clips().From(motion).SelectMany(clip => clip.GetAllBindings()).Any()) {
                     motion = inClip.GetLastFrame();
                 }
-                var outClip = model.simpleOutTransition ? (originalInAction == null ? inClip.Clone() : actionClipService.LoadState(onName + " Out", originalInAction)) : actionClipService.LoadState(onName + " Out", outAction);
+                var outClip = model.simpleOutTransition ? inClip.Clone() : actionClipService.LoadState(onName + " Out", outAction);
                 var outSpeed = model.simpleOutTransition ? -1 : 1;
                 
                 // Copy "object enabled" and "material" states to in and out clips if they don't already have them
@@ -362,6 +343,29 @@ namespace VF.Feature {
             foreach (var toggle in allToggles) {
                 foreach (var tag in toggle.GetExclusiveTags()) {
                     tagToToggles.Put(tag, toggle);
+                }
+            }
+            var existingGroups = new List<ISet<ToggleBuilder>>();
+            foreach (var tag in tagToToggles.GetKeys()) {
+                var groupToggles = tagToToggles.Get(tag);
+                if (groupToggles.Count == 1) {
+                    // A group of one :(
+                    continue;
+                }
+                if (existingGroups.Any(a => a.SetEquals(groupToggles))) {
+                    // An identical group already got added
+                    continue;
+                }
+                existingGroups.Add(groupToggles);
+
+                var layer = fx.NewLayer($"Exclusive Tag - {tag}");
+                layer.NewState("Idle");
+                foreach (var toggle in groupToggles) {
+                    var state = layer.NewState(toggle.model.name);
+                    state.TransitionsFromAny().When(toggle.isOn);
+                    foreach (var other in groupToggles.Where(o => o != toggle)) {
+                        other.drive(state, false);
+                    }
                 }
             }
 
