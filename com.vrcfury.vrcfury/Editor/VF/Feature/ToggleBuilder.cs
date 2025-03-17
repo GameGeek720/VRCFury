@@ -31,7 +31,6 @@ namespace VF.Feature {
         private MenuManager menu => menuService.GetMenu();
         [VFAutowired] private readonly GlobalsService globals;
 
-        private readonly List<VFState> exclusiveTagTriggeringStates = new List<VFState>();
         private VFCondition isOn;
         private Action<VFState, bool> drive;
         private AnimationClip savedRestingClip;
@@ -320,7 +319,6 @@ namespace VF.Feature {
                 restingClip = builtAction.onClip;
             }
 
-            exclusiveTagTriggeringStates.Add(inState);
             off.TransitionsTo(inState).When(onCase);
 
             if (model.enableDriveGlobalParam) {
@@ -353,29 +351,43 @@ namespace VF.Feature {
 
         [FeatureBuilderAction(FeatureOrder.CollectToggleExclusiveTags)]
         public void ApplyExclusiveTags() {
-             if (!(model.exclusiveOffState && isOn != null && drive != null)) return;
+            if (!IsFirst()) return;
 
-            var allOthersOffCondition = fx.Always();
+            var allToggles = globals.allBuildersInRun
+                .OfType<ToggleBuilder>()
+                .Where(toggle => toggle.isOn != null && toggle.drive != null)
+                .ToArray();
 
-            var myTags = GetExclusiveTags();
-            foreach (var other in globals.allBuildersInRun
-                         .OfType<ToggleBuilder>()
-                         .Where(b => b != this)) {
-                var otherTags = other.GetExclusiveTags();
-                var conflictsWithOther = myTags.Any(myTag => otherTags.Contains(myTag));
-                if (conflictsWithOther) {
-                    if (other.isOn != null && other.drive != null) {
-                        allOthersOffCondition = allOthersOffCondition.And(other.isOn.Not());
-                    }
+            var tagToToggles = new VFMultimapSet<string, ToggleBuilder>();
+            foreach (var toggle in allToggles) {
+                foreach (var tag in toggle.GetExclusiveTags()) {
+                    tagToToggles.Put(tag, toggle);
                 }
             }
 
-            var layer = fx.NewLayer(model.name + " - Off Trigger");
-            var off = layer.NewState("Idle");
-            var on = layer.NewState("Trigger");
-            off.TransitionsTo(on).When(allOthersOffCondition);
-            on.TransitionsTo(off).When(allOthersOffCondition.Not().Or(isOn.Not()));
-            drive(on, true);
+            var exclusiveOffLayer = new Lazy<(VFLayer,VFState)>(() => {
+                var layer = fx.NewLayer("Exclusive Tag - Off States");
+                var idle = layer.NewState("Idle");
+                return (layer,idle);
+            });
+            foreach (var toggle in allToggles.Where(t => t.model.exclusiveOffState)) {
+                var conflictsWith = toggle.GetExclusiveTags()
+                    .SelectMany(tag => tagToToggles.Get(tag))
+                    .Where(t => t != toggle)
+                    .ToArray();
+                if (conflictsWith.Any()) {
+                    var triggerWhen = toggle.isOn.Not();
+                    foreach (var other in conflictsWith) {
+                        triggerWhen = triggerWhen.And(other.isOn.Not());
+                    }
+                    var state = exclusiveOffLayer.Value.Item1.NewState(toggle.model.name);
+                    state.TransitionsFromAny().When(triggerWhen);
+                    toggle.drive(state, true);
+                }
+            }
+            if (exclusiveOffLayer.IsValueCreated) {
+                exclusiveOffLayer.Value.Item2.TransitionsFromAny().When(fx.Always());
+            }
         }
 
         public override string GetClipPrefix() {
