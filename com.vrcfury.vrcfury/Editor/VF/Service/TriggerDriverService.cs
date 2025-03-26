@@ -123,9 +123,9 @@ namespace VF.Service {
 
             foreach (var trigger in triggers) {
                 var (clip, triggerParam, param, value) = trigger;
-                //DriveOld(triggerParam, param, value, false);
-                var newTriggerParam = floatToDriverService.Drive(param, "TriggerDriverService", value, null);
-                clip.SetAap(newTriggerParam, 1);
+                DriveOld(triggerParam, param, value, false);
+                //var newTriggerParam = floatToDriverService.Drive(param, "TriggerDriverService", value, null);
+                //clip.SetAap(newTriggerParam, 1);
             }
         }
     }
