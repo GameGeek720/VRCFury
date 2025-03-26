@@ -24,7 +24,7 @@ namespace VF.Feature {
         [VFAutowired] private readonly ActionClipService actionClipService;
         [VFAutowired] private readonly RestingStateService restingState;
         [VFAutowired] private readonly FixWriteDefaultsService writeDefaultsManager;
-        [VFAutowired] private readonly ClipRewriteService clipRewriteService;
+        [VFAutowired] private readonly AllClipsService allClipsService;
         [VFAutowired] private readonly ControllersService controllers;
         private ControllerManager fx => controllers.GetFx();
         [VFAutowired] private readonly MenuService menuService;
@@ -43,7 +43,7 @@ namespace VF.Feature {
             + "If you want the toggle to be called 'Pants' in a submenu called 'Clothing', you'd put:\nClothing/Pants\n\n"
             + "If you want to include a '/' character in the label without making a subfolder, add a backslash just before it: \\/";
 
-        private static ISet<string> SeparateList(string str) {
+        public static ISet<string> SeparateList(string str) {
             return str.Split(',')
                 .Select(tag => tag.Trim())
                 .Where(tag => !string.IsNullOrWhiteSpace(tag))
@@ -325,7 +325,7 @@ namespace VF.Feature {
                 loadedRestingClip = true;
                 if (restingClip.IsStatic()) {
                     savedRestingClip = restingClip.EvaluateMotion(1);
-                    clipRewriteService.AddAdditionalManagedClip(savedRestingClip);
+                    allClipsService.AddAdditionalManagedClip(savedRestingClip);
                 }
             }
         }
