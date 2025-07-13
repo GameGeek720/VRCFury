@@ -729,19 +729,15 @@ namespace VF.Builder.Haptics {
                 }
             }
 
-            return (ReadFile(path), isBuiltIn);
+            return (ReadFile(path, true), isBuiltIn);
         }
-        private static string ReadFile(string path) {
+        private static string ReadFile(string path, bool isMainShader = false) {
             string content;
-            if (path.EndsWith("orlshader")) {
-                var sourceAsset = AssetDatabase.LoadAllAssetsAtPath(path).OfType<TextAsset>().FirstOrDefault();
-                if (sourceAsset == null) throw new Exception("Failed to find orlshader source");
-                content = sourceAsset.text;
-            } else if (path.EndsWith("lilcontainer")) {
+            if (isMainShader && !path.EndsWith(".shader") && !path.EndsWith(".shader.orig")) {
                 var sourceAsset = AssetDatabase.LoadAllAssetsAtPath(path).OfType<TextAsset>().FirstOrDefault();
                 if (sourceAsset != null) {
                     content = sourceAsset.text;
-                } else {
+                } else if (path.EndsWith(".lilcontainer")) {
                     var lilShaderContainer = ReflectionUtils.GetTypeFromAnyAssembly("lilToon.lilShaderContainer");
                     var unpackMethod = lilShaderContainer.GetMethods()
                         .First(m => m.Name == "UnpackContainer" && m.GetParameters().Length == 2);
@@ -749,6 +745,8 @@ namespace VF.Builder.Haptics {
                     var shaderLibsPath = (string)lilShaderContainer.GetField("shaderLibsPath",
                         BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static).GetValue(null);
                     content = content.Replace("\"Includes", "\"" + shaderLibsPath);
+                } else {
+                    throw new Exception("Failed to find source for post-processed shader: " + path);
                 }
             } else {
                 StreamReader sr = new StreamReader(path);
