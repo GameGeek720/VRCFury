@@ -510,14 +510,16 @@ namespace VF.Service {
                     return new SavedParam() {
                         parameter = p.Clone(),
                         source = source,
-                        compressed = paramsToOptimize.compress.Contains(p)
+                        compressed = paramsToOptimize.compress.Any(o => o.name == p.name)
                     };
                 }).ToList();
                 var saveData = new SavedData() {
                     parameters = paramList,
                     saveVersion = 3,
                     unityVersion = Application.unityVersion,
-                    vrcfuryVersion = VRCFPackageUtils.Version
+                    vrcfuryVersion = VRCFPackageUtils.Version,
+                    boolSlots = paramsToOptimize.boolSlots,
+                    numberSlots = paramsToOptimize.numberSlots
                 };
                 var saveText = JsonUtility.ToJson(saveData, true);
                 var originalAvatar = originalAvatarService.GetOriginal();
