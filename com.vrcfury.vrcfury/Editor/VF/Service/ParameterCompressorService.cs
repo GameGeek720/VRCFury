@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Collections.Immutable;
 using System.IO;
 using System.Linq;
 using System.Text;
@@ -48,18 +49,7 @@ namespace VF.Service {
                 return;
             }
 
-            var numbersToOptimize =
-                decision.compress.Where(i => i.valueType != VRCExpressionParameters.ValueType.Bool).ToList();
-            var boolsToOptimize =
-                decision.compress.Where(i => i.valueType == VRCExpressionParameters.ValueType.Bool).ToList();
-            var numberBatches = numbersToOptimize
-                .Chunk(decision.numberSlots)
-                .Select(chunk => chunk.ToList())
-                .ToList();
-            var boolBatches = boolsToOptimize
-                .Chunk(decision.boolSlots)
-                .Select(chunk => chunk.ToList())
-                .ToList();
+            var (numberBatches, boolBatches) = decision.GetBatches();
 
             var syncPointer = fx.NewInt("SyncPointer", synced: true);
             var syncInts = Enumerable.Range(0, decision.numberSlots)
@@ -179,7 +169,6 @@ namespace VF.Service {
                 return new OptimizationDecision();
             }
 
-            var allParams = paramz.GetRaw().parameters.Select(p => p.name).ToHashSet();
             var drivenParams = new HashSet<string>();
             var addDrivenParams = new HashSet<string>();
 
@@ -216,7 +205,7 @@ namespace VF.Service {
                 return decision;
             }
 
-            var nonMenuParams = new HashSet<string>(allParams);
+            var nonMenuParams = new HashSet<string>(paramz.GetRaw().parameters.Select(p => p.name));
             nonMenuParams.ExceptWith(GetParamsUsedInMenu(true));
             nonMenuParams.ExceptWith(drivenParams);
 
@@ -346,32 +335,53 @@ namespace VF.Service {
                     - compress.Sum(p => VRCExpressionParameters.TypeCost(p.valueType));
             }
 
-            private int CalcRound(int boolSlots, int numberSlots) {
-                var bools = compress.Count(p => p.valueType == VRCExpressionParameters.ValueType.Bool);
-                var nums = compress.Count(p => p.valueType != VRCExpressionParameters.ValueType.Bool);
+            public (
+                List<List<VRCExpressionParameters.Parameter>> numberBatches,
+                List<List<VRCExpressionParameters.Parameter>> boolBatches
+            ) GetBatches(int offsetNumberSlots = 0) {
+                var numbersToOptimize =
+                    compress.Where(i => i.valueType != VRCExpressionParameters.ValueType.Bool).ToList();
+                var boolsToOptimize =
+                    compress.Where(i => i.valueType == VRCExpressionParameters.ValueType.Bool).ToList();
+                var numberBatches = numbersToOptimize
+                    .Chunk(numberSlots + offsetNumberSlots)
+                    .Select(chunk => chunk.ToList())
+                    .ToList();
+                var boolBatches = boolsToOptimize
+                    .Chunk(boolSlots)
+                    .Select(chunk => chunk.ToList())
+                    .ToList();
+                return (numberBatches, boolBatches);
+            }
 
-                var boolRounds = Math.Ceiling((float) bools / boolSlots);
-                var numRounds = Math.Ceiling((float) nums / numberSlots);
-
-                return (int) Math.Max(boolRounds, numRounds);
+            public int GetNumRounds(int offsetNumberSlots = 0) {
+                var batches = GetBatches(offsetNumberSlots);
+                return Math.Max(batches.numberBatches.Count, batches.boolBatches.Count);
             }
 
             /**
-             * Minimized the total number of rounds required to sync all params
-             * Starts with 1 number slot, then converts bool slots into number slots until the number of rounds stops decreasing
+             * Attempts to expand the number of used number and bool slots up until the avatar's bits are full,
+             * to increase parallelism and reduce the time needed for a full sync.
+             * If both bools and numbers are compressed, it attempts to keep the batch count the same so it's not
+             * wasting time syncing only bools or only numbers during some batches.
              */
             public void Optimize(int originalCost) {
                 var boolCount = compress.Count(p => p.valueType == VRCExpressionParameters.ValueType.Bool);
                 var numberCount = compress.Count(p => p.valueType != VRCExpressionParameters.ValueType.Bool);
+                boolSlots = boolCount > 0 ? 1 : 0;
+                numberSlots = numberCount > 0 ? 1 : 0;
                 var currentCost = originalCost + CalcOffset();
                 var maxCost = VRCExpressionParametersExtensions.GetMaxCost();
-                var budget = maxCost - currentCost;
-                numberSlots = 1;
-                boolSlots = Math.Max(budget - 8, 1); // needs to be a positive value
-
-                while (boolSlots > 8 && CalcRound(boolSlots, numberSlots) > CalcRound(boolSlots - 8, numberSlots + 1)) {
-                    boolSlots -= 8;
-                    numberSlots += 1;
+                while (true) {
+                    if (numberSlots < numberCount && currentCost <= maxCost - 8 && GetNumRounds(1) < GetNumRounds()) {
+                        numberSlots++;
+                        currentCost += 8;
+                    } else if (boolSlots < boolCount && currentCost <= maxCost - 1) {
+                        boolSlots++;
+                        currentCost += 1;
+                    } else {
+                        break;
+                    }
                 }
             }
         }
