@@ -45,9 +45,14 @@ namespace VF.Feature.Base {
         CollectToggleExclusiveTags,
         // Needs to run before ArmatureLinkBuilder, which reads active state of objects
         ApplyRestState3,
-        
+
+        // Advanced colliders need to run before global colliders so that custom fingers are used first
+        AdvancedColliders,
+        GlobalColliders,
+
         // Needs to happen before DriveNonFloatTypes
         EvaluateTriggerParams,
+
         // Needs to happen after all controller params (and their types) are in place
         DriveNonFloatTypes,
         
