@@ -93,10 +93,8 @@ namespace VF.Builder {
             VRCFProgressWindow progress
         ) {
             var currentModelName = "";
-            var currentModelClipPrefix = "?";
             var currentServiceNumber = 0;
             var currentServiceGameObject = avatarObject;
-            var currentObjectPath = "";
             FeatureBuilder currentFeature = null;
 
             var actions = new List<FeatureBuilderAction>();
@@ -110,26 +108,14 @@ namespace VF.Builder {
                 throw new Exception("Failed to find VRCAvatarDescriptor on avatar object");
             }
 
-            var injector = new VRCFuryInjector();
-            injector.ImportScan(typeof(VFServiceAttribute));
-            injector.ImportScan(typeof(ActionBuilder));
-            injector.Set(avatar);
-            injector.Set("avatarObject", avatarObject);
+            var injector = VRCFuryInjectorBuilder.GetInjector(avatar);
             injector.Set("componentObject", new Func<VFGameObject>(() => currentServiceGameObject));
-            
-            var globals = new GlobalsService {
-                addOtherFeature = (feature) => AddComponent(feature, currentServiceGameObject, currentServiceNumber),
-                allFeaturesInRun = collectedModels,
-                allBuildersInRun = collectedBuilders,
-                avatarObject = avatarObject,
-                currentFeatureNumProvider = () => currentServiceNumber,
-                currentFeatureNameProvider = () => currentModelName,
-                currentFeatureClipPrefixProvider = () => currentModelClipPrefix,
-                currentMenuSortPosition = () => currentServiceNumber,
-                currentFeatureObjectPath = () => currentObjectPath,
-                currentFeature = () => currentFeature,
-            };
-            injector.Set(globals);
+
+            var globals = injector.GetService<GlobalsService>();
+            globals.addOtherFeature = (feature) => AddComponent(feature, currentServiceGameObject, currentServiceNumber);
+            globals.allFeaturesInRun = collectedModels;
+            globals.allBuildersInRun = collectedBuilders;
+            globals.currentFeature = () => currentFeature;
             
             foreach (var service in injector.GetServices<object>()) {
                 AddActionsFromObject(service, avatarObject);
@@ -227,12 +213,12 @@ namespace VF.Builder {
                     injector.GetService<RestingStateService>().OnPhaseChanged();
                 }
 
-                currentServiceNumber = action.serviceNum;
+                globals.currentMenuSortPosition = globals.currentFeatureNum = currentServiceNumber = action.serviceNum;
                 var objectName = action.configObject.GetPath(avatarObject, prettyRoot: true);
-                currentModelName = $"{service.GetType().Name}.{action.GetName()} on {objectName}";
-                currentModelClipPrefix = $"VF{currentServiceNumber} {(service as FeatureBuilder)?.GetClipPrefix() ?? service.GetType().Name}";
+                globals.currentFeatureName = currentModelName = $"{service.GetType().Name}.{action.GetName()} on {objectName}";
+                globals.currentFeatureClipPrefix = $"VF{currentServiceNumber} {(service as FeatureBuilder)?.GetClipPrefix() ?? service.GetType().Name}";
                 currentServiceGameObject = action.configObject;
-                currentObjectPath = action.configObject.GetPath(avatarObject);
+                globals.currentFeatureObjectPath = action.configObject.GetPath(avatarObject);
                 currentFeature = (service as FeatureBuilder);
 
                 var statusMessage = $"{service.GetType().Name}.{action.GetName()} on {objectName} ({currentServiceNumber})";
