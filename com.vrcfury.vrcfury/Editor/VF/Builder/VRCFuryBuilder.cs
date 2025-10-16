@@ -95,7 +95,6 @@ namespace VF.Builder {
             var currentModelName = "";
             var currentServiceNumber = 0;
             var currentServiceGameObject = avatarObject;
-            FeatureBuilder currentFeature = null;
 
             var actions = new List<FeatureBuilderAction>();
             var totalActionCount = 0;
@@ -115,7 +114,6 @@ namespace VF.Builder {
             globals.addOtherFeature = (feature) => AddComponent(feature, currentServiceGameObject, currentServiceNumber);
             globals.allFeaturesInRun = collectedModels;
             globals.allBuildersInRun = collectedBuilders;
-            globals.currentFeature = () => currentFeature;
             
             foreach (var service in injector.GetServices<object>()) {
                 AddActionsFromObject(service, avatarObject);
@@ -219,7 +217,7 @@ namespace VF.Builder {
                 globals.currentFeatureClipPrefix = $"VF{currentServiceNumber} {(service as FeatureBuilder)?.GetClipPrefix() ?? service.GetType().Name}";
                 currentServiceGameObject = action.configObject;
                 globals.currentFeatureObjectPath = action.configObject.GetPath(avatarObject);
-                currentFeature = (service as FeatureBuilder);
+                globals.currentFeature = (service as FeatureBuilder);
 
                 var statusMessage = $"{service.GetType().Name}.{action.GetName()} on {objectName} ({currentServiceNumber})";
                 progress.Progress(1 - (actions.Count / (float)totalActionCount), statusMessage);

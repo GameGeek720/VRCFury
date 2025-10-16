@@ -40,7 +40,7 @@ namespace VF.Service {
         }
 
         public void DriveTag(AnimationClip clip, VFAFloat triggerParam, string tag, float value) {
-            drivenTags.Add((clip, triggerParam, tag, value, globals.currentFeature()));
+            drivenTags.Add((clip, triggerParam, tag, value, globals.currentFeature));
         }
 
         public void DriveOld(VFAFloat input, string output, float value, bool reset = true) {

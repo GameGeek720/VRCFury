@@ -20,7 +20,7 @@ namespace VF.Service {
         public string currentFeatureClipPrefix = "";
         public int currentMenuSortPosition = 0;
         public VFAFloat currentTriggerParam;
-        public Func<FeatureBuilder> currentFeature;
+        public FeatureBuilder currentFeature;
         public string currentFeatureObjectPath = "";
     }
 }
