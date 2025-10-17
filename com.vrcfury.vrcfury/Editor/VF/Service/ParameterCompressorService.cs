@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Collections.Immutable;
 using System.IO;
 using System.Linq;
 using System.Text;
@@ -36,30 +37,28 @@ namespace VF.Service {
         private const float BATCH_TIME = 0.1f;
 
         public void Apply() {
-            var paramz = paramsService.GetReadOnlyParams();
-            if (paramz == null) paramz = VrcfObjectFactory.Create<VRCExpressionParameters>();
-            var mutated = paramz.Clone();
-            Apply(mutated);
-
-            if (!paramz.IsSameAs(mutated)) {
-                paramsService.GetParams().GetRaw().parameters = mutated.parameters;
-            }
-        }
-
-        private void Apply(VRCExpressionParameters paramz) {
-            paramz.RemoveDuplicates();
-
-            OptimizationDecision decision;
-            if (BuildTargetUtils.IsDesktop()) {
-                decision = AlignForDesktop(paramz);
-            } else {
-                decision = AlignForMobile(paramz);
+            OptimizationDecisionWithInfo decisionWithInfo;
+            {
+                // This is written weird to make sure we don't clone the params if we don't have to
+                var readOnlyParams = paramsService.GetReadOnlyParams();
+                var mutated = readOnlyParams.Clone();
+                mutated.RemoveDuplicates();
+                if (BuildTargetUtils.IsDesktop()) {
+                    decisionWithInfo = AlignForDesktop(mutated);
+                } else {
+                    decisionWithInfo = AlignForMobile(mutated);
+                }
+                if (!readOnlyParams.IsSameAs(mutated)) {
+                    paramsService.GetParams().GetRaw().parameters = mutated.parameters;
+                }
             }
 
-            if (!decision.compress.Any()) {
+            var decision = decisionWithInfo.decision;
+            if (decision == null || !decision.compress.Any()) {
                 return;
             }
 
+            var paramz = paramsService.GetParams().GetRaw();
             var (numberBatches, boolBatches) = decision.GetBatches();
 
             VRCExpressionParameters.Parameter MakeParam(string name, VRCExpressionParameters.ValueType type, bool synced) {
@@ -181,7 +180,8 @@ namespace VF.Service {
             doAtEnd?.Invoke();
 
             var originalCost = paramz.CalcTotalCost();
-            foreach (var param in decision.compress) {
+            var compressNames = decision.compress.Select(p => p.name).ToImmutableHashSet();
+            foreach (var param in paramz.parameters.Where(p => compressNames.Contains(p.name))) {
                 param.SetNetworkSynced(false);
             }
             var newCost = paramz.CalcTotalCost();
@@ -197,38 +197,37 @@ namespace VF.Service {
             // Debug info
             {
                 var types = new List<string>();
-                if (decision.options != null) {
-                    if (decision.options.includeToggles) types.Add("Toggles");
-                    if (decision.options.includeRadials) types.Add("Radials");
-                    if (decision.options.includePuppets) types.Add("Puppets");
-                    if (decision.options.includeButtons) types.Add("Buttons");
+                var options = decisionWithInfo.options;
+                if (options != null) {
+                    if (options.includeToggles) types.Add("Toggles");
+                    if (options.includeRadials) types.Add("Radials");
+                    if (options.includePuppets) types.Add("Puppets");
+                    if (options.includeButtons) types.Add("Buttons");
                 }
 
-                var typesInfo = "";
-                if (types.Count > 0) {
-                    typesInfo = "These menu parameters were compressed:\n" + types.Join(", ") + "\n\n";
-                }
+                var nonMenuParamsInfo = decisionWithInfo.FormatNonMenuParams(100);
 
                 var time = decision.GetBatchCount() * BATCH_TIME;
                 
                 var debug = avatarObject.AddComponent<VRCFuryDebugInfo>();
                 debug.title = "Parameter Compressor";
                 debug.debugInfo =
-                    "VRCFury compressed the parameters on this avatar to make them fit VRC's limit.\n\n"
-                    + $"It compressed {originalCost} bits down to {newCost} bits.\n\n"
-                    + typesInfo
-                    + $"Syncing these parameters will only happen once every {time} seconds.";
+                    "VRCFury compressed the parameters on this avatar to make them fit VRC's limit."
+                    + $"\n\nIt compressed {originalCost} bits down to {newCost} bits."
+                    + (types.Count > 0 ? $"\n\nThese menu parameters were compressed:\n{types.Join(", ")}" : "")
+                    + $"\n\nSyncing these parameters will only happen once every {time} seconds."
+                    + (string.IsNullOrEmpty(nonMenuParamsInfo) ? "" : $"\n\n{nonMenuParamsInfo}");
                 debug.warn = true;
 
                 Debug.Log($"Parameter Compressor: Compressed {originalCost} bits into {newCost} bits.");
             }
         }
 
-        private OptimizationDecision GetParamsToOptimize(VRCExpressionParameters paramz) {
+        private OptimizationDecisionWithInfo GetParamsToOptimize(VRCExpressionParameters paramz) {
             var originalCost = paramz.CalcTotalCost();
             var maxCost = VRCExpressionParametersExtensions.GetMaxCost();
             if (originalCost <= maxCost) {
-                return new OptimizationDecision();
+                return new OptimizationDecisionWithInfo();
             }
 
             var drivenParams = new HashSet<string>();
@@ -271,24 +270,30 @@ namespace VF.Service {
                     break;
                 }
             }
-
-            var setting = CompressorMenuItem.Get();
-            if (bestWasSuccess) {
-                if (setting == CompressorMenuItem.Value.Compress) return bestDecision;
-                if (setting == CompressorMenuItem.Value.Ask) {
-                    var msg = $"Your avatar is out of space for parameters! Your avatar uses {originalCost}/{maxCost} bits.";
-                    msg += " VRCFury can compress your parameters to fit, at the expense of slightly slower toggle syncing in game. Is this okay?";
-                    var ok = EditorUtility.DisplayDialog("Out of parameter space", msg, "Ok (Accept Compression)", "Fail the Build");
-                    if (ok) return bestDecision;
-                }
-            }
-
+            
             var nonMenuParams = new HashSet<string>(paramz.parameters
                 .Where(p => p.IsNetworkSynced())
                 .Select(p => p.name));
             nonMenuParams.ExceptWith(GetParamsUsedInMenu(null));
             nonMenuParams.ExceptWith(drivenParams);
             nonMenuParams.RemoveWhere(s => s.StartsWith("FT/"));
+
+            var decisionWithInfo = new OptimizationDecisionWithInfo {
+                decision = bestDecision,
+                nonMenuParams = nonMenuParams,
+                options = bestParameterOptions
+            };
+
+            var setting = CompressorMenuItem.Get();
+            if (bestWasSuccess) {
+                if (setting == CompressorMenuItem.Value.Compress) return decisionWithInfo;
+                if (setting == CompressorMenuItem.Value.Ask) {
+                    var msg = $"Your avatar is out of space for parameters! Your avatar uses {originalCost}/{maxCost} bits.";
+                    msg += " VRCFury can compress your parameters to fit, at the expense of slightly slower toggle syncing in game. Is this okay?";
+                    var ok = EditorUtility.DisplayDialog("Out of parameter space", msg, "Ok (Accept Compression)", "Fail the Build");
+                    if (ok) return decisionWithInfo;
+                }
+            }
 
             var errorMessage = $"Your avatar is out of space for parameters! Your avatar uses {originalCost}/{maxCost} bits.";
 
@@ -301,14 +306,13 @@ namespace VF.Service {
             errorMessage += " Ask your avatar creator, or the creator of the last prop you've added, " +
                             "if there are any parameters you can remove to make space.";
 
-            if (nonMenuParams.Count > 0 && setting != CompressorMenuItem.Value.Fail) {
-                errorMessage += "\n\n"
-                                + "These parameters were not compressable because they are not used in your menu, and not driven. If these aren't related to OSC, you should probably delete them:\n"
-                                + nonMenuParams.JoinWithMore(20);
+            var nonMenuParamsInfo = decisionWithInfo.FormatNonMenuParams(20);
+            if (setting != CompressorMenuItem.Value.Fail && !string.IsNullOrEmpty(nonMenuParamsInfo)) {
+                errorMessage += $"\n\n{nonMenuParamsInfo}";
             }
 
             excService.ThrowIfActuallyUploading(new SneakyException(errorMessage));
-            return new OptimizationDecision();
+            return new OptimizationDecisionWithInfo();
         }
 
         public class ParamSelectionOptions {
@@ -364,8 +368,7 @@ namespace VF.Service {
             }
 
             var decision = new OptimizationDecision {
-                compress = eligible,
-                options = options
+                compress = eligible
             };
             decision.Optimize(originalCost);
 
@@ -397,11 +400,23 @@ namespace VF.Service {
             return Path.Combine(localAppData, "VRCFury", "DesktopSyncData", blueprintId + ".json");
         }
 
+        private class OptimizationDecisionWithInfo {
+            public OptimizationDecision decision;
+            public ParamSelectionOptions options;
+            public ISet<string> nonMenuParams;
+
+            public string FormatNonMenuParams(int maxCount) {
+                if (nonMenuParams == null || nonMenuParams.Count == 0) return "";
+                return "These parameters were not compressable because they are not used in your menu, and not driven." +
+                       " If these aren't related to OSC, you should probably delete them:\n" +
+                       nonMenuParams.JoinWithMore(maxCount);
+            }
+        }
+
         private class OptimizationDecision {
             public int numberSlots = 0;
             public int boolSlots = 0;
             public IList<VRCExpressionParameters.Parameter> compress = new VRCExpressionParameters.Parameter[] { };
-            public ParamSelectionOptions options;
 
             public OptimizationDecision TempCopy(Action<OptimizationDecision> with) {
                 var copy = new OptimizationDecision {
@@ -483,7 +498,7 @@ namespace VF.Service {
             }
         }
 
-        private OptimizationDecision AlignForMobile(VRCExpressionParameters paramz) {
+        private OptimizationDecisionWithInfo AlignForMobile(VRCExpressionParameters paramz) {
             if (!AlignMobileParamsMenuItem.Get()) {
                 return GetParamsToOptimize(paramz);
             }
@@ -615,22 +630,24 @@ namespace VF.Service {
 
             paramsService.GetParams().GetRaw().parameters = reordered.ToArray();
 
-            return new OptimizationDecision() {
-                boolSlots = desktopData.boolSlots,
-                numberSlots = desktopData.numberSlots,
-                compress = paramsToOptimize
+            return new OptimizationDecisionWithInfo {
+                decision = new OptimizationDecision() {
+                    boolSlots = desktopData.boolSlots,
+                    numberSlots = desktopData.numberSlots,
+                    compress = paramsToOptimize
+                },
             };
         }
 
-        private OptimizationDecision AlignForDesktop(VRCExpressionParameters paramz) {
-            var paramsToOptimize = GetParamsToOptimize(paramz);
+        private OptimizationDecisionWithInfo AlignForDesktop(VRCExpressionParameters paramz) {
+            var decisionWithInfo = GetParamsToOptimize(paramz);
             if (IsActuallyUploadingHook.Get()) {
                 var paramList = paramz.parameters.Select(p => {
                     var source = parameterSourceService.GetSource(p.name);
                     return new SavedParam() {
                         parameter = p.Clone(),
                         source = source,
-                        compressed = paramsToOptimize.compress.Contains(p)
+                        compressed = decisionWithInfo.decision?.compress.Contains(p) ?? false
                     };
                 }).ToList();
                 var saveData = new SavedData() {
@@ -638,8 +655,8 @@ namespace VF.Service {
                     saveVersion = 3,
                     unityVersion = Application.unityVersion,
                     vrcfuryVersion = VRCFPackageUtils.Version,
-                    boolSlots = paramsToOptimize.boolSlots,
-                    numberSlots = paramsToOptimize.numberSlots
+                    boolSlots = decisionWithInfo.decision?.boolSlots ?? 0,
+                    numberSlots = decisionWithInfo.decision?.numberSlots ?? 0
                 };
                 var saveText = JsonUtility.ToJson(saveData, true);
                 var originalAvatar = originalAvatarService.GetOriginal();
@@ -653,7 +670,7 @@ namespace VF.Service {
                     }
                 });
             }
-            return paramsToOptimize;
+            return decisionWithInfo;
         }
     }
 }
