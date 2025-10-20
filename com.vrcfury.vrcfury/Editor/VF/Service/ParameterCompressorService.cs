@@ -19,6 +19,7 @@ using VRC.Core;
 using VRC.SDK3.Avatars.Components;
 using VRC.SDK3.Avatars.ScriptableObjects;
 using VRC.SDKBase;
+using static VRC.SDK3.Avatars.ScriptableObjects.VRCExpressionsMenu.Control;
 using Random = System.Random;
 
 namespace VF.Service {
@@ -34,7 +35,7 @@ namespace VF.Service {
         [VFAutowired] private readonly MenuService menuService;
         private VRCExpressionsMenu menuReadOnly => menuService.GetReadOnlyMenu();
         
-        private const float BATCH_TIME = 0.12f;
+        private const float BATCH_TIME = 0.1f;
 
         public void Apply() {
             OptimizationDecisionWithInfo decisionWithInfo;
@@ -88,6 +89,12 @@ namespace VF.Service {
             entry.TransitionsFromAny().When(fx.IsAnimatorEnabled().IsFalse());
             var remoteLost = layer.NewState("Receive (Lost)").Move(entry, 0, 1);
             entry.TransitionsTo(remoteLost).When(fx.IsLocal().IsFalse());
+            // var clip = VrcfObjectFactory.Create<AnimationClip>();
+            // clip.SetCurve("Body", typeof(SkinnedMeshRenderer), "material._Color.r", 1);
+            // clip.SetCurve("Body", typeof(SkinnedMeshRenderer), "material._Color.g", 0);
+            // clip.SetCurve("Body", typeof(SkinnedMeshRenderer), "material._Color.b", 0);
+            // clip.SetCurve("Body", typeof(SkinnedMeshRenderer), "material._Color.a", 1);
+            // remoteLost.WithAnimation(clip);
 
             Action doAtEnd = () => { };
             Action<VFState,VFState,VFCondition> whenNextStateReady = null;
@@ -107,7 +114,16 @@ namespace VF.Service {
 
                 // Create and wire up send and receive states
                 var latchTitlePrefix = (batchNum == 0) ? "Latch & " : "";
+                // We can't just go to the next send after 0.1s, because of a weird unity animator quirk where it will exit
+                // "early" if it thinks the exit time is closer to the current frame than the next frame, which would potentially
+                // make it update faster than the sync rate and lose a packet. To fix this, we have to add exactly one extra frame by going through
+                // an additional state between each send.
+                var sendStateExtraFrame = layer.NewState("Extra Frame").Move(entry, -2, yOffset);
                 var sendState = layer.NewState($"{latchTitlePrefix}Send {title}").Move(entry, -1, yOffset);
+                sendStateExtraFrame.TransitionsTo(sendState).When(fx.Always());
+                // if (batchNum == 0) {
+                //     sendState.WithAnimation(clip);
+                // }
                 var receiveConditions = new List<VFCondition>();
                 foreach (var i in Enumerable.Range(0, indexBitCount)) {
                     doAtEnd += () => sendState.Drives(syncIndex[i], syncIds[i]);
@@ -129,16 +145,16 @@ namespace VF.Service {
                     sendLatchState = sendState;
                     recvUnlatchState = receiveState;
                     doAtEnd += () => {
-                        whenNextStateReady?.Invoke(sendState, receiveState, receiveCondition);
+                        whenNextStateReady?.Invoke(sendStateExtraFrame, receiveState, receiveCondition);
                     };
                 }
-                whenNextStateReady?.Invoke(sendState, receiveState, receiveCondition);
+                whenNextStateReady?.Invoke(sendStateExtraFrame, receiveState, receiveCondition);
                 whenNextStateReady = (nextSend, nextRecv, nextRecvCond) => {
                     sendState.TransitionsTo(nextSend).WithTransitionExitTime(BATCH_TIME).When();
                     WithReceiveState(rcv => {
+                        //rcv.TransitionsTo(remoteLost).WithTransitionExitTime(BATCH_TIMEOUT).When();
                         rcv.TransitionsTo(nextRecv).When(nextRecvCond);
                         rcv.TransitionsTo(remoteLost).When(receiveCondition.Not().And(nextRecvCond.Not()));
-                        rcv.TransitionsTo(remoteLost).WithTransitionExitTime(BATCH_TIME * 1.5f).When();
                     });
                 };
                 
@@ -196,30 +212,44 @@ namespace VF.Service {
 
             // Debug info
             {
-                var types = new List<string>();
                 var options = decisionWithInfo.options;
-                if (options != null) {
-                    if (options.includeToggles) types.Add("Toggles");
-                    if (options.includeRadials) types.Add("Radials");
-                    if (options.includePuppets) types.Add("Puppets");
-                    if (options.includeButtons) types.Add("Buttons");
-                }
+                var types = options?.FormatTypes();
 
                 var nonMenuParamsInfo = decisionWithInfo.FormatNonMenuParams(100);
 
-                var time = decision.GetBatchCount() * BATCH_TIME;
+                var minSyncTime = batchCount * BATCH_TIME;
+                // Assume we just missed to the batch, so it has to do 2 full loops AND account for the extra
+                // frame hack needed above, which can add half a frame per batch. Assume 30fps.
+                var maxSyncTime = batchCount * (BATCH_TIME + (1 / 30f) * 0.5f) * 2;
                 
                 var debug = avatarObject.AddComponent<VRCFuryDebugInfo>();
                 debug.title = "Parameter Compressor";
                 debug.debugInfo =
                     "VRCFury compressed the parameters on this avatar to make them fit VRC's limit."
-                    + $"\n\nIt compressed {originalCost} bits down to {newCost} bits."
-                    + (types.Count > 0 ? $"\n\nThese menu parameters were compressed:\n{types.Join(", ")}" : "")
-                    + $"\n\nSyncing these parameters will only happen once every {time} seconds."
+                    + $"\n\nOld Total: {originalCost} bits"
+                    + $"\nNew Total: {newCost} bits"
+                    + (!string.IsNullOrEmpty(types) ? $"\nCompressed types: {types}" : "")
+                    + $"\nSync delay: {minSyncTime.ToString("N1")} - {maxSyncTime.ToString("N1")} seconds"
+                    + $"\nBools per batch: {decision.boolSlots}"
+                    + $"\nNumbers per batch: {decision.numberSlots}"
+                    + $"\nBatches per sync: {batchCount}"
                     + (string.IsNullOrEmpty(nonMenuParamsInfo) ? "" : $"\n\n{nonMenuParamsInfo}");
                 debug.warn = true;
 
                 Debug.Log($"Parameter Compressor: Compressed {originalCost} bits into {newCost} bits.");
+
+                // Patch av3emu to use 0.1 sync time instead of its default (0.2)
+                EditorApplication.delayCall += () => {
+                    EditorApplication.delayCall += () => {
+                        if (avatarObject == null) return;
+                        var type = ReflectionUtils.GetTypeFromAnyAssembly("Lyuma.Av3Emulator.Runtime.LyumaAv3Runtime");
+                        var field = type?.GetField("NonLocalSyncInterval");
+                        if (type == null || field == null) return;
+                        var runtime = avatarObject.GetComponent(type);
+                        if (runtime == null) return;
+                        field.SetValue(runtime, 0.1f);
+                    };
+                };
             }
         }
 
@@ -244,32 +274,36 @@ namespace VF.Service {
             }
 
             var attemptOptions = new Func<ParamSelectionOptions>[] {
-                () => new ParamSelectionOptions { includeToggles = true, includeRadials = true, maxBatches = 10, },
-                () => new ParamSelectionOptions { includeToggles = true, includeRadials = true, includePuppets = true, maxBatches = 10 },
-                () => new ParamSelectionOptions { includeToggles = true, includeRadials = true },
-                () => new ParamSelectionOptions { includeToggles = true, includeRadials = true, includePuppets = true },
-                () => new ParamSelectionOptions { includeToggles = true, includeRadials = true, includePuppets = true, includeButtons = true },
+                () => new ParamSelectionOptions { allowedMenuTypes = new [] { ControlType.RadialPuppet } },
+                () => new ParamSelectionOptions { allowedMenuTypes = new [] { ControlType.Toggle } },
+                () => new ParamSelectionOptions { allowedMenuTypes = new [] { ControlType.RadialPuppet, ControlType.Toggle } },
+                () => new ParamSelectionOptions { allowedMenuTypes = new [] { ControlType.TwoAxisPuppet, ControlType.FourAxisPuppet } },
+                () => new ParamSelectionOptions { allowedMenuTypes = new [] { ControlType.RadialPuppet, ControlType.TwoAxisPuppet, ControlType.FourAxisPuppet } },
+                () => new ParamSelectionOptions { allowedMenuTypes = new [] { ControlType.Toggle, ControlType.TwoAxisPuppet, ControlType.FourAxisPuppet } },
+                () => new ParamSelectionOptions { allowedMenuTypes = new [] { ControlType.RadialPuppet, ControlType.Toggle, ControlType.TwoAxisPuppet, ControlType.FourAxisPuppet } },
             };
 
             var bestCost = originalCost;
             var bestDecision = new OptimizationDecision();
             var bestWasSuccess = false;
+            var bestTime = 0f;
             ParamSelectionOptions bestParameterOptions = null;
             foreach (var attemptOptionFunc in attemptOptions) {
                 var options = attemptOptionFunc.Invoke();
-                var decision = GetParamsToOptimize(paramz, options, addDrivenParams, originalCost);
-                if (options.maxBatches > 0 && decision.GetBatchCount() > options.maxBatches) continue;
+                var decision = GetParamsToOptimize(paramz, options.allowedMenuTypes.ToImmutableHashSet(), addDrivenParams, originalCost);
                 var cost = decision.GetFinalCost(originalCost);
-                if (cost < bestCost) {
-                    bestCost = cost;
-                    bestDecision = decision;
-                    bestParameterOptions = options;
-                }
+                if (cost >= bestCost) continue;
+                var syncTime = decision.GetBatchCount() * BATCH_TIME;
+                // If we already have a working solution, only accept a more aggressive option if it cuts the sync time at least in half
+                if (bestWasSuccess && syncTime > bestTime / 2) continue;
+                bestCost = cost;
+                bestDecision = decision;
+                bestParameterOptions = options;
                 if (cost <= maxCost) {
                     bestWasSuccess = true;
-                    break;
+                    if (syncTime <= 1) break; // If sync time is less than 1s, don't need to try any more aggressive options
                 }
-            }
+            } 
             
             var nonMenuParams = new HashSet<string>(paramz.parameters
                 .Where(p => p.IsNetworkSynced())
@@ -316,54 +350,77 @@ namespace VF.Service {
         }
 
         public class ParamSelectionOptions {
-            public bool includeToggles;
-            public bool includeRadials;
-            public bool includePuppets;
-            public bool includeButtons;
-            public int maxBatches;
+            public IList<ControlType> allowedMenuTypes;
+
+            public string FormatTypes() {
+                return MenuTypePriority.Where(t => allowedMenuTypes.Contains(t)).Select(t => t.ToString()).Join(", ");
+            }
         }
 
-        private ISet<string> GetParamsUsedInMenu(ParamSelectionOptions options) {
-            var paramNames = new HashSet<string>();
-            void AttemptToAdd(VRCExpressionsMenu.Control.Parameter param) {
+        private static readonly IList<ControlType> MenuTypePriority = new[] {
+            // Make sure these are in priority order, since it matters if a param is used by multiple menu item types
+            ControlType.RadialPuppet,
+            ControlType.Toggle,
+            ControlType.TwoAxisPuppet,
+            ControlType.FourAxisPuppet,
+            ControlType.Button
+        };
+
+        private ISet<string> GetParamsUsedInMenu(ISet<ControlType> allowedMenuTypes) {
+            var paramNameToMenuType = new Dictionary<string, ControlType>();
+            void AttemptToAdd(Parameter param, ControlType menuType) {
                 if (param == null) return;
                 if (string.IsNullOrEmpty(param.name)) return;
-                paramNames.Add(param.name);
+                var menuTypePriority = MenuTypePriority.IndexOf(menuType);
+                if (menuTypePriority < 0) return;
+                if (paramNameToMenuType.TryGetValue(param.name, out var oldMenuType)) {
+                    var oldMenuTypePriority = MenuTypePriority.IndexOf(oldMenuType);
+                    if (menuTypePriority < oldMenuTypePriority) return;
+                }
+                paramNameToMenuType[param.name] = menuType;
             }
 
             // Don't use MenuService to avoid making a clone if this isn't a vrcfury asset
             if (menuReadOnly != null) {
                 menuReadOnly.ForEachMenu(ForEachItem: (control, list) => {
-                    if (control.type == VRCExpressionsMenu.Control.ControlType.RadialPuppet && (options == null || options.includeRadials)) {
-                        AttemptToAdd(control.GetSubParameter(0));
-                    } else if (control.type == VRCExpressionsMenu.Control.ControlType.Button && (options == null || options.includeButtons)) {
-                        AttemptToAdd(control.parameter);
-                    } else if (control.type == VRCExpressionsMenu.Control.ControlType.Toggle && (options == null || options.includeToggles)) {
-                        AttemptToAdd(control.parameter);
-                    } else if (control.type == VRCExpressionsMenu.Control.ControlType.FourAxisPuppet && (options == null || options.includePuppets)) {
-                        AttemptToAdd(control.GetSubParameter(0));
-                        AttemptToAdd(control.GetSubParameter(1));
-                        AttemptToAdd(control.GetSubParameter(2));
-                        AttemptToAdd(control.GetSubParameter(3));
-                    } else if (control.type == VRCExpressionsMenu.Control.ControlType.TwoAxisPuppet && (options == null || options.includePuppets)) {
-                        AttemptToAdd(control.GetSubParameter(0));
-                        AttemptToAdd(control.GetSubParameter(1));
+                    if (control.type == ControlType.RadialPuppet) {
+                        AttemptToAdd(control.GetSubParameter(0), control.type);
+                    } else if (control.type == ControlType.Button) {
+                        AttemptToAdd(control.parameter, control.type);
+                    } else if (control.type == ControlType.Toggle) {
+                        AttemptToAdd(control.parameter, control.type);
+                    } else if (control.type == ControlType.FourAxisPuppet) {
+                        AttemptToAdd(control.GetSubParameter(0), control.type);
+                        AttemptToAdd(control.GetSubParameter(1), control.type);
+                        AttemptToAdd(control.GetSubParameter(2), control.type);
+                        AttemptToAdd(control.GetSubParameter(3), control.type);
+                    } else if (control.type == ControlType.TwoAxisPuppet) {
+                        AttemptToAdd(control.GetSubParameter(0), control.type);
+                        AttemptToAdd(control.GetSubParameter(1), control.type);
                     }
 
                     return VRCExpressionsMenuExtensions.ForEachMenuItemResult.Continue;
                 });
             }
-            return paramNames;
+            return paramNameToMenuType
+                .Where(pair => allowedMenuTypes == null || allowedMenuTypes.Contains(pair.Value))
+                .Select(pair => pair.Key)
+                .ToImmutableHashSet();
         }
 
-        private OptimizationDecision GetParamsToOptimize(VRCExpressionParameters paramz, ParamSelectionOptions options, ISet<string> addDriven, int originalCost) {
+        private OptimizationDecision GetParamsToOptimize(
+            VRCExpressionParameters paramz,
+            ISet<ControlType> allowedMenuTypes,
+            ISet<string> addDriven,
+            int originalCost
+        ) {
             var eligible = new List<VRCExpressionParameters.Parameter>();
-            var usedInMenu = GetParamsUsedInMenu(options);
+            var usedInMenu = GetParamsUsedInMenu(allowedMenuTypes);
 
             foreach (var param in paramz.parameters) {
                 if (!param.IsNetworkSynced()) continue;
                 if (!usedInMenu.Contains(param.name)) continue;
-                if (addDriven.Contains(param.name) && !options.includePuppets) continue;
+                if (addDriven.Contains(param.name) && !allowedMenuTypes.Contains(ControlType.FourAxisPuppet)) continue;
                 eligible.Add(param);
             }
 
