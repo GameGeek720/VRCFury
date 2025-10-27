@@ -414,7 +414,7 @@ namespace VF.Feature {
                         return smoothed;
                     }
                     return name;
-                }, false, myLayers);
+                }, includeWrites: false, includeCopyDriverReads: false, limitToLayers: myLayers);
             }
         }
 
@@ -686,18 +686,13 @@ namespace VF.Feature {
             "Earmuffs",
             "IsOnFriendsList",
             "AvatarVersion",
-
-            "Supine",
-            "GroundProximity",
+            "IsAnimatorEnabled",
 
             "ScaleModified",
             "ScaleFactor",
             "ScaleFactorInverse",
             "EyeHeightAsMeters",
             "EyeHeightAsPercent",
-            
-            "IsAnimatorEnabled",
-            
         };
     }
 
