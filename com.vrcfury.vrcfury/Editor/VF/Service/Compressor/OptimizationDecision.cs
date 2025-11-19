@@ -23,13 +23,9 @@ namespace VF.Service.Compressor {
         }
 
         public int GetIndexBitCount() {
-            if (useBadPriorityMethod) {
-                return 8;
-            } else if (GetBatchCount() <= 2) {
-                return 1;
-            } else {
-                return 4;
-            }
+            if (useBadPriorityMethod) return 8;
+            var requiredBits = (int) Math.Ceiling(Math.Log(GetBatchCount(), 2));
+            return Math.Min(requiredBits, 4);
         }
 
         public int GetFinalCost(int originalCost) {
