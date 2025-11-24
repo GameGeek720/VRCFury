@@ -1,6 +1,8 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Linq;
+using UnityEditor;
+using UnityEngine;
 using VF.Injector;
 using VF.Utils;
 using VF.Utils.Controller;
@@ -15,7 +17,7 @@ namespace VF.Service.Compressor {
         [VFAutowired] private readonly CompressorLayerUtilsService layerUtilsService;
         [VFAutowired] private readonly ControllersService controllers;
         private ControllerManager fx => controllers.GetFx();
-        
+
         public void BuildLayer(OptimizationDecision decision) {
             var (numberBatches, boolBatches) = decision.GetBatches();
 
@@ -51,8 +53,8 @@ namespace VF.Service.Compressor {
             foreach (var batchNum in Enumerable.Range(0, batchCount)) {
                 Action<VFState> sendIdDriver = s => { };
 
-                var syncId = ((batchNum - 1) % ((1 << indexBitCount) - 1)) + 1;
-                if (batchNum == 0) syncId = 0;
+                var syncId = batchNum + 1;
+                if (syncId >= (1 << indexBitCount)) throw new Exception("Unexpected syncId outside of index bit range");
                 var syncIds = Enumerable.Range(0, indexBitCount).Select(i => (syncId & 1<<(indexBitCount-1-i)) > 0).ToArray();
                 var titleId = syncIds.Select(b => b ? "1" : "0").Join("");
                 var receiveConditions = new List<VFCondition>();
