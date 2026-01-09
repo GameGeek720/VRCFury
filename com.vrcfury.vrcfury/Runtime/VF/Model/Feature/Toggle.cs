@@ -49,6 +49,7 @@ namespace VF.Model.Feature {
         public bool holdButton;
         public bool invertRestLogic;
         public bool expandIntoTransition = true;
+        public bool localOnly;
 
         public override bool Upgrade(int fromVersion) {
 #pragma warning disable 0612

@@ -89,17 +89,6 @@ namespace VF.Feature {
             return (model.name, model.usePrefixOnParam, false);
         }
 
-        private bool getIsOnlyLocalToggle() {
-            if (model.state.actions.Count() > 0) return false;
-            if (model.hasTransition) {
-                if (model.transitionStateIn.actions.Count() > 0) return false;
-                if (model.transitionStateOut.actions.Count() > 0) return false;
-            }
-            if (model.enableExclusiveTag && !string.IsNullOrWhiteSpace(model.exclusiveTag)) return false;
-            if (model.useGlobalParam) return false;
-            return true;
-        }
-
         public VFAParam getParam() {
             return param;
         }
@@ -109,7 +98,7 @@ namespace VF.Feature {
             var hasTitle = !string.IsNullOrEmpty(model.name);
             var hasIcon = model.enableIcon && model.icon?.Get() != null;
             var addMenuItem = model.addMenuItem && (hasTitle || hasIcon);
-            var networkSyncParam = !getIsOnlyLocalToggle();
+            var networkSyncParam = !model.localOnly;
 
             var synced = addMenuItem || networkSyncParam;
             if (model.useGlobalParam && FullControllerBuilder.VRChatGlobalParams.Contains(model.globalParam)) {
@@ -444,6 +433,7 @@ namespace VF.Feature {
             var useGlobalParamProp = prop.FindPropertyRelative("useGlobalParam");
             var globalParamProp = prop.FindPropertyRelative("globalParam");
             var holdButtonProp = prop.FindPropertyRelative("holdButton");
+            var localOnlyProp = prop.FindPropertyRelative("localOnly");
 
             var flex = new VisualElement().Row();
             content.Add(flex);
@@ -545,6 +535,11 @@ namespace VF.Feature {
 
                 advMenu.AddItem(new GUIContent("Use a Global Parameter"), useGlobalParamProp.boolValue, () => {
                     useGlobalParamProp.boolValue = !useGlobalParamProp.boolValue;
+                    prop.serializedObject.ApplyModifiedProperties();
+                });
+
+                advMenu.AddItem(new GUIContent("Local Only Parameter"), localOnlyProp.boolValue, () => {
+                    localOnlyProp.boolValue = !localOnlyProp.boolValue;
                     prop.serializedObject.ApplyModifiedProperties();
                 });
 
@@ -682,6 +677,8 @@ namespace VF.Feature {
                     tags.Add((defaultOnProp.boolValue || sliderProp.boolValue) ? "Hide when animator disabled" : "Show when animator disabled");
                 if (exclusiveOffStateProp.boolValue)
                     tags.Add("This is the Exclusive Off State");
+                if (localOnlyProp.boolValue)
+                    tags.Add("Local Only");
 
                 var row = new VisualElement().Row().FlexWrap();
                 foreach (var tag in tags) {
@@ -702,7 +699,8 @@ namespace VF.Feature {
             exclusiveOffStateProp,
             holdButtonProp,
             hasExitTimeProp,
-            sliderProp
+            sliderProp,
+            localOnlyProp
             ));
 
             content.Add(VRCFuryEditorUtils.Debug(refreshElement: () => {
