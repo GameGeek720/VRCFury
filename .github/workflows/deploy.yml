@@ -8,8 +8,6 @@ jobs:
   test:
     runs-on: ubuntu-latest
     timeout-minutes: 30
-    env:
-      PROJECT_PATH: .github/workflows/test_project
     strategy:
       fail-fast: false
       matrix:
@@ -21,11 +19,19 @@ jobs:
           - [ 3.5.0, 2022.3.6f1 ]
           - [ 3.3.0, 2019.4.31f1 ]
           - [ 3.0.9, 2019.4.31f1 ]
-          - [ 2022.06.03.00.04, 2019.4.31f1 ]
           - [ 3.10.1, 6000.3.1f1 ]
         platform:
           - windows
           - android
+        sdkKind:
+          - avatars
+        include:
+          - vrcsdkUnityVersion: [ 3.10.1, 2022.3.22f1 ]
+            platform: windows
+            sdkKind: worlds
+          - vrcsdkUnityVersion: [ 3.10.1, 2022.3.22f1 ]
+            platform: android
+            sdkKind: worlds
     steps:
       - uses: actions/checkout@v6
 
@@ -39,35 +45,10 @@ jobs:
 
       - name: Download VRCSDK
         run: |
-          VERSION="${{ matrix.vrcsdkUnityVersion[0] }}"
-          echo "Downloading VRCSDK $VERSION"
+          PROJECT_PATH=.github/test_project .github/scripts/download_vrcsdk.sh "${{ matrix.vrcsdkUnityVersion[0] }}" "${{ matrix.sdkKind }}"
 
-          if [[ "$VERSION" == "2022.06.03.00.04" ]]; then
-            curl -L -o "vrcsdk.zip" "https://github.com/VRCFury/VRCFury/releases/download/old-vrcsdk/VRCSDK.zip"
-            unzip "vrcsdk.zip" -d "$PROJECT_PATH/Assets"
-            rm "vrcsdk.zip"
-          else
-            MANIFEST_URL="https://vrchat.github.io/packages/index.json"
-            echo "Downloading manifest from $MANIFEST_URL"
-            MANIFEST="$(curl "$MANIFEST_URL")"
-            AV_URL="$(echo "$MANIFEST" | jq ".packages.\"com.vrchat.avatars\".versions.\"$VERSION\".url" --raw-output)"
-            echo "Avatar SDK URL is $AV_URL"
-            BASE_URL="$(echo "$MANIFEST" | jq ".packages.\"com.vrchat.base\".versions.\"$VERSION\".url" --raw-output)"
-            echo "Base SDK URL is $BASE_URL"
-            curl -L -o "avatars.zip" "$AV_URL"
-            curl -L -o "base.zip" "$BASE_URL"
-            mkdir -p "$PROJECT_PATH/Packages/com.vrchat.avatars"
-            mkdir -p "$PROJECT_PATH/Packages/com.vrchat.base"
-            unzip avatars.zip -d "$PROJECT_PATH/Packages/com.vrchat.avatars"
-            unzip base.zip -d "$PROJECT_PATH/Packages/com.vrchat.base"
-            rm "avatars.zip"
-            rm "base.zip"
-          fi
-
-      - name: Run Tests
-        id: tests
-        env:
-          UNITY_LICENSE: ${{ secrets.UNITY_LICENSE }}
+      - name: Resolve Test Image
+        id: image
         run: |
           IMAGE="unityci/editor:ubuntu-${{ matrix.vrcsdkUnityVersion[1] }}"
           if [ "${{ matrix.platform }}" = "android" ]; then
@@ -76,13 +57,21 @@ jobs:
             IMAGE="$IMAGE-windows-mono"
           fi
           IMAGE="$IMAGE-${{ env.GAMECI_VERSION }}"
+          echo "image=$IMAGE" >> "$GITHUB_OUTPUT"
 
-          chmod +x .github/workflows/test_ci.sh
-          docker run --rm \
-              --env UNITY_LICENSE \
-              --volume="${PWD}:/opt/project" \
-              "$IMAGE" \
-              /opt/project/.github/workflows/test_ci.sh
+      - name: Verify Compile
+        uses: game-ci/unity-test-runner@v4
+        env:
+          UNITY_LICENSE: ${{ secrets.UNITY_LICENSE }}
+          UNITY_EMAIL: ${{ secrets.UNITY_EMAIL }}
+          UNITY_PASSWORD: ${{ secrets.UNITY_PASSWORD }}
+        with:
+          projectPath: .github/test_project
+          unityVersion: ${{ matrix.vrcsdkUnityVersion[1] }}
+          testMode: EditMode
+          customImage: ${{ steps.image.outputs.image }}
+          customParameters: -testCategory VRCFury
+          githubToken: ${{ secrets.GITHUB_TOKEN }}
 
   deploy:
     needs: test
@@ -109,16 +98,17 @@ jobs:
           path: versions
           repository: VRCFury/vrcfury-updater-manifest
           ssh-key: ${{ secrets.VERSION_DEPLOY_KEY }}
-      - uses: actions/setup-node@v6
+      - uses: pnpm/action-setup@v5
         with:
-          node-version: 24
+          package_json_file: repo/.github/scripts/package.json
+          standalone: true
       - name: Bundle
-        working-directory: repo
+        working-directory: repo/.github/scripts
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          (cd .github/workflows && npm install)
-          node .github/workflows/bundle.js
+          pnpm install --frozen-lockfile
+          pnpm node bundle.js "$GITHUB_WORKSPACE/repo" "$GITHUB_WORKSPACE/versions"
       - name: Push version manifest
         working-directory: versions
         run: |

@@ -1,0 +1,40 @@
+{
+    "name": "VRCFury-Editor-Worlds",
+    "rootNamespace": "VF",
+    "references": [
+        "VRCFury",
+        "VRCFury-Editor-Common",
+        "VRC.SDKBase.Editor.BuildPipeline",
+        "VRC.SDKBase.Editor",
+        "VRC.SDK3.Editor"
+    ],
+    "includePlatforms": [
+        "Editor"
+    ],
+    "excludePlatforms": [],
+    "allowUnsafeCode": false,
+    "overrideReferences": true,
+    "precompiledReferences": [
+        "System.Collections.Immutable.dll",
+        "VRCSDKBase.dll",
+        "VRC.Dynamics.dll",
+        "VRC.SDK3.Dynamics.PhysBone.dll",
+        "VRC.SDK3.Dynamics.Contact.dll",
+        "VRC.SDK3.Dynamics.Constraint.dll",
+        "VRCSDKBase-Editor.dll",
+        "VRCCore-Editor.dll"
+    ],
+    "autoReferenced": false,
+    "defineConstraints": [
+        "UDON",
+        "VRCF_WORLDS"
+    ],
+    "versionDefines": [
+        {
+            "name": "com.vrchat.worlds",
+            "expression": "",
+            "define": "VRCF_WORLDS"
+        }
+    ],
+    "noEngineReferences": false
+}
