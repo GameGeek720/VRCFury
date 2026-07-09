@@ -24,6 +24,7 @@ namespace VF.Component {
         public List<string> spsBlendshapes = new List<string>();
         public List<Renderer> configureTpsMesh = new List<Renderer>();
         public float spsAnimatedEnabled = 1;
+        public bool disableDepth = true;
         public bool useLegacyRendererFinder = false;
         public bool addDpsTipLight = false;
         [DoNotApplyRestingState]
@@ -33,6 +34,10 @@ namespace VF.Component {
         [Obsolete] public List<LegacyPlugDepthAction> depthActions = new List<LegacyPlugDepthAction>();
         public List<VRCFuryHapticSocket.DepthActionNew> depthActions2 = new List<VRCFuryHapticSocket.DepthActionNew>();
         public bool useHipAvoidance = true;
+        public bool useSharedTag = true;
+        public bool useLights = true;
+        public List<TagRule> includeTags = new List<TagRule>();
+        public List<TagRule> excludeTags = new List<TagRule>();
 
         [Obsolete] public bool configureSps = false;
         [Obsolete] public bool spsBoneMask = true;
@@ -48,6 +53,13 @@ namespace VF.Component {
             public bool enableSelf;
             public float smoothingSeconds = 0;
             [Obsolete] public float smoothing;
+        }
+
+        [Serializable]
+        public class TagRule {
+            public string tag;
+            public bool allowSelf = true;
+            public bool allowOthers = true;
         }
 
         public override bool Upgrade(int fromVersion) {

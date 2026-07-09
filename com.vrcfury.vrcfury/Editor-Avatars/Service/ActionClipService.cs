@@ -61,13 +61,20 @@ namespace VF.Service {
             }).ToList();
         }
 
-        public BuiltAction LoadStateAdv(string name, State state, VFGameObject animObjectOverride = null, MotionTimeMode motionTime = MotionTimeMode.Never) {
+        public BuiltAction LoadStateAdv(
+            string name,
+            State state,
+            VFGameObject animObjectOverride = null,
+            MotionTimeMode motionTime = MotionTimeMode.Never,
+            bool debugMode = false
+        ) {
+            
             if (globals != null) globals.currentTriggerParam = null; // always reset when making an animation
-
+            
             var animObject = animObjectOverride ?? componentObject();
 
             var outputMotions = GetActiveActions(state)
-                .Select(a => LoadAction(name, a, animObject))
+                .Select(a => LoadAction(name, a, animObject, debugMode))
                 .Where(motion => new AnimatorIterator.Clips().From(motion).SelectMany(clip => clip.GetAllBindings()).Any())
                 .ToList();
 
@@ -119,7 +126,12 @@ namespace VF.Service {
             };
         }
 
-        private Motion LoadAction(string name, Action action, VFGameObject animObject) {
+        private Motion LoadAction(
+            string name,
+            Action action,
+            VFGameObject animObject,
+            bool debugMode
+        ) {
             if (!modelTypeToBuilder.TryGetValue(action.GetType(), out var builder)) {
                 throw new Exception($"Unknown action type {action.GetType().Name}");
             }
@@ -129,6 +141,7 @@ namespace VF.Service {
             methodInjector.Set(this);
             methodInjector.Set("actionName", name);
             methodInjector.Set("animObject", animObject);
+            methodInjector.Set("debugMode", debugMode);
             var buildMethod = builder.GetType().VFMethod("Build");
             var clip = (Motion)methodInjector.FillMethod(buildMethod, builder);
 

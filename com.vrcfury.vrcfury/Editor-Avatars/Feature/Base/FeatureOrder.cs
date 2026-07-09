@@ -9,6 +9,7 @@ namespace VF.Feature.Base {
         FixDoubleFx,
         RemoveDefaultControllers,
         RemoveExtraDescriptors,
+        FixInvalidAnimator,
 
         // Needs to happen before anything starts using the Animator
         ResetAnimatorBefore,
@@ -70,6 +71,9 @@ namespace VF.Feature.Base {
         // Needs to happen after any new skinned meshes have been added
         BoundingBoxFix,
         AnchorOverrideFix,
+
+        // Needs to happen after object moves, once final object hierarchy is known
+        IsObjectEnabled,
 
         // Needs to happen after toggles
         HapticsAnimationRewrites,
