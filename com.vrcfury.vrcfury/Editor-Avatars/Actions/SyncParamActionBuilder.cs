@@ -9,6 +9,7 @@ using VF.Inspector;
 using VF.Model.StateAction;
 using VF.Service;
 using VF.Utils;
+using VF.Utils.Controller;
 
 namespace VF.Actions {
     [FeatureTitle("Set a Synced Param")]
@@ -18,7 +19,7 @@ namespace VF.Actions {
         [VFAutowired] [CanBeNull] private readonly GlobalsService globals;
         [VFAutowired] [CanBeNull] private readonly TriggerDriverService driveOtherTypesFromFloatService;
         
-        public AnimationClip Build(SyncParamAction model, string actionName) {
+        public VFClip Build(SyncParamAction model, string actionName) {
             var onClip = NewClip();
 
             if (globals == null) return onClip;
@@ -27,7 +28,7 @@ namespace VF.Actions {
                 globals.currentTriggerParam = fx.NewFloat(actionName + " (Param Trigger)");
                 onClip.SetAap(globals.currentTriggerParam, 1);
             }
-            onClip.SetCurve("TRIGGER_DUMMY",typeof(GameObject),"TRIGGER_DUMMY",1);
+            onClip.SetCurve(null,typeof(GameObject),"TRIGGER_DUMMY",1);
             driveOtherTypesFromFloatService.DriveSyncParam(onClip, globals.currentTriggerParam, model.param, model.value);
             return onClip;
         }

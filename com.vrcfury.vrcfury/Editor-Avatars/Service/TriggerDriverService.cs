@@ -24,22 +24,22 @@ namespace VF.Service {
         private VFLayer layer;
         private VFState idle;
 
-        private readonly Dictionary<string, (VFAInteger,int,VFTransition)> currentSettings = new Dictionary<string, (VFAInteger,int,VFTransition)>();
+        private readonly Dictionary<string, (VFAInteger,int,VFTransitionBuilder)> currentSettings = new Dictionary<string, (VFAInteger,int,VFTransitionBuilder)>();
         private readonly Dictionary<VFAFloat, VFState> createdStates = new Dictionary<VFAFloat, VFState>();
 
-        private readonly List<(AnimationClip,VFAFloat,string,float)> drivenSyncParams = new ();
-        private readonly List<(AnimationClip,VFAFloat,string,float)> drivenToggles = new ();
-        private readonly List<(AnimationClip,VFAFloat,string,float,FeatureBuilder)> drivenTags = new ();
+        private readonly List<(VFClip,VFAFloat,string,float)> drivenSyncParams = new ();
+        private readonly List<(VFClip,VFAFloat,string,float)> drivenToggles = new ();
+        private readonly List<(VFClip,VFAFloat,string,float,FeatureBuilder)> drivenTags = new ();
 
-        public void DriveSyncParam(AnimationClip clip, VFAFloat triggerParam, string param, float value) {
+        public void DriveSyncParam(VFClip clip, VFAFloat triggerParam, string param, float value) {
             drivenSyncParams.Add((clip, triggerParam, param, value));
         }
 
-        public void DriveToggle(AnimationClip clip, VFAFloat triggerParam, string toggle, float value) {
+        public void DriveToggle(VFClip clip, VFAFloat triggerParam, string toggle, float value) {
             drivenToggles.Add((clip, triggerParam, toggle, value));
         }
 
-        public void DriveTag(AnimationClip clip, VFAFloat triggerParam, string tag, float value) {
+        public void DriveTag(VFClip clip, VFAFloat triggerParam, string tag, float value) {
             drivenTags.Add((clip, triggerParam, tag, value, globals.currentFeature));
         }
 
@@ -92,7 +92,7 @@ namespace VF.Service {
 
         [FeatureBuilderAction(FeatureOrder.EvaluateTriggerParams)]
         public void DriveNonFloatTypes() {
-            List<(AnimationClip, VFAFloat, string, float)> triggers = new();
+            List<(VFClip, VFAFloat, string, float)> triggers = new();
             foreach (var trigger in drivenTags) {
                 var (clip, triggerParam, tag, target, feature) = trigger;
                 foreach (var other in globals.allBuildersInRun
