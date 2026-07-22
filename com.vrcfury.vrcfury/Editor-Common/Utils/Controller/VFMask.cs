@@ -100,9 +100,10 @@ namespace VF.Utils.Controller {
             return output;
         }
 
-        public AvatarMask Save(VFGameObject bindingRoot, bool reuseSourceAsset = true) {
+        public AvatarMask Save(VFSaveContext context) {
+            var bindingRoot = context.BindingRoot;
             if (bindingRoot == null) throw new ArgumentNullException(nameof(bindingRoot));
-            if (reuseSourceAsset && !changedFromSource && CanUseSourceRaw(bindingRoot)) {
+            if (context.ReuseSourceAssets && !changedFromSource && CanUseSourceRaw(bindingRoot)) {
                 return sourceRaw;
             }
 
@@ -118,7 +119,7 @@ namespace VF.Utils.Controller {
                 raw.transformCount = 0;
             } else {
                 var active = transforms
-                    .Select(t => t.GetPath(bindingRoot, "Resolved mask transform requires a binding root"))
+                    .Select(t => t.GetPath(bindingRoot))
                     .ToHashSet();
                 var withParents = WithParents(active)
                     .OrderBy(path => path)
@@ -130,6 +131,7 @@ namespace VF.Utils.Controller {
                 }
                 EnsureOneTransform(raw);
             }
+            context.AddNewAsset(raw);
             return raw;
         }
 
@@ -137,7 +139,7 @@ namespace VF.Utils.Controller {
             if (sourceRaw == null) return false;
             foreach (var transform in transforms) {
                 if (bindingRoot == null) return false;
-                if (transform.GetPath(bindingRoot, "Resolved mask transform requires a binding root") != transform.SourcePath) {
+                if (transform.GetPath(bindingRoot) != transform.SourcePath) {
                     return false;
                 }
             }

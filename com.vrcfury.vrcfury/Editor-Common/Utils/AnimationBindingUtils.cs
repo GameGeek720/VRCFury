@@ -3,7 +3,10 @@ using System.Collections.Generic;
 using System.Linq;
 using UnityEngine;
 using UnityEngine.Animations;
-using VRC.Dynamics;
+using VF.Builder;
+#if VRCSDK_HAS_VRCCONSTRAINTS
+using VRC.SDKBase.Validation.Performance;
+#endif
 
 namespace VF.Utils {
     internal static class AnimationBindingUtils {
@@ -13,43 +16,39 @@ namespace VF.Utils {
             string path,
             Type type,
             bool rootBindingsApplyToAvatar = false,
-            Func<VFGameObject, string, VFGameObject> findObject = null
+            bool useCachedPaths = true
         ) {
             if (animatorObject == null) return null;
             if (ownerObject == null) return null;
             if (path == null) return null;
             if (type == typeof(Animator)) return animatorObject;
-            if (ownerObject != animatorObject && !ownerObject.IsChildOf(animatorObject)) return null;
             if (path == "" && rootBindingsApplyToAvatar) {
                 return animatorObject;
             }
-            VFGameObject Find(VFGameObject from, string relativePath) {
-                return findObject != null ? findObject(from, relativePath) : from.Find(relativePath);
+            var ancestor = ownerObject;
+            while (ancestor != null && ancestor != animatorObject) {
+                ancestor = useCachedPaths ? VRCFObjectPathCache.GetParent(ancestor) : ancestor.parent;
             }
-            if (ownerObject == animatorObject) {
-                var target = Find(animatorObject, path);
-                return IsValidResolvedTarget(target, type) ? target : null;
-            }
+            if (ancestor != animatorObject) return null;
 
             VFGameObject current = ownerObject;
             while (current != null) {
-                if (current != animatorObject && !current.IsChildOf(animatorObject)) break;
-                var candidatePath = current == animatorObject
-                    ? path
-                    : JoinPaths(current.GetPath(animatorObject), path);
-                var target = Find(animatorObject, candidatePath);
+                var target = useCachedPaths
+                    ? VRCFObjectPathCache.Find(current, path)
+                    : current.Find(path);
                 if (IsValidResolvedTarget(target, type)) {
                     return target;
                 }
 
                 if (current == animatorObject) break;
-                current = current.parent;
+                current = useCachedPaths ? VRCFObjectPathCache.GetParent(current) : current.parent;
             }
             return null;
         }
 
-        private static bool IsValidResolvedTarget(VFGameObject target, Type type) {
+        internal static bool IsValidResolvedTarget(VFGameObject target, Type type) {
             if (target == null) return false;
+            if (type == null) return false;
             if (type == typeof(GameObject)) return true;
             if (!typeof(UnityEngine.Component).IsAssignableFrom(type)) return false;
             if (target.GetComponent(type) != null) return true;
@@ -57,9 +56,10 @@ namespace VF.Utils {
             if (type == typeof(BoxCollider)
                 && target.GetComponents().Any(component => component.GetType().Name == "VRCStation")) return true;
 #if VRCSDK_HAS_VRCCONSTRAINTS
+            // Half-upgraded assets can temporarily point at the other kind of constraint.
             if (typeof(IConstraint).IsAssignableFrom(type)
-                && target.GetComponents<VRCConstraintBase>().Any()) return true;
-            if (typeof(VRCConstraintBase).IsAssignableFrom(type)
+                && target.GetComponents<IVRCConstraint>().Any()) return true;
+            if (typeof(IVRCConstraint).IsAssignableFrom(type)
                 && target.GetComponents<IConstraint>().Any()) return true;
 #endif
             return false;

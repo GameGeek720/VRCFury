@@ -48,15 +48,11 @@ namespace VF.Utils.Controller {
             output.loopTime = settings.loopTime;
             output.additiveReferencePoseClip = VFMotion.Load(settings.additiveReferencePoseClip, context) as VFClip;
 
-            if (AssetDatabase.IsMainAsset(raw)) {
-                var path = AssetDatabase.GetAssetPath(raw);
-                if (string.IsNullOrEmpty(path)) {
-                    output.changedFromOriginalSourceClip = true;
-                } else if (Path.GetFileName(path).StartsWith("proxy_")) {
-                    output.originalSourceIsProxyClip = true;
-                }
-            } else {
+            var path = AssetDatabase.GetAssetPath(raw);
+            if (string.IsNullOrEmpty(path)) {
                 output.changedFromOriginalSourceClip = true;
+            } else if (AssetDatabase.IsMainAsset(raw) && Path.GetFileName(path).StartsWith("proxy_")) {
+                output.originalSourceIsProxyClip = true;
             }
 
             var rawPairs =
@@ -89,7 +85,7 @@ namespace VF.Utils.Controller {
                     output.changedFromOriginalSourceClip = true;
                     continue;
                 }
-                var binding = VFBinding.FromResolvedObject(resolvedObject.Value, rawBinding);
+                var binding = VFBinding.From(resolvedObject.Value, rawBinding);
                 if ((context?.AdjustRootScale ?? false)
                     && context?.AnimatorObject != null
                     && curve.IsFloat
@@ -192,6 +188,7 @@ namespace VF.Utils.Controller {
             settings.additiveReferencePoseClip = additiveReferencePoseClip?.Save(context) as AnimationClip;
             AnimationUtility.SetAnimationClipSettings(clip, settings);
 
+            context.AddNewAsset(clip);
             context.Add(this, clip);
             return clip;
         }
@@ -296,12 +293,9 @@ namespace VF.Utils.Controller {
             var binding = curve == null || curve.IsFloat
                 ? EditorCurveBinding.FloatCurve("", type, propertyName)
                 : EditorCurveBinding.PPtrCurve("", type, propertyName);
-            SetCurve(new VFBinding(
-                target,
-                binding,
-                binding.path,
-                binding.path,
-                type != typeof(Animator)
+            SetCurve(VFBinding.From(
+                new VFResolvedObject(target, null, null, true),
+                binding
             ), curve);
         }
 
