@@ -74,6 +74,7 @@ namespace VF.Feature {
                     missingAssets.Add(c.controller);
                     continue;
                 }
+                Debug.Log($"Merging controller from {source.GetPathAndName()}");
                 var copy = VFControllerWithVrcType.Load(
                     source,
                     c.type,
@@ -160,8 +161,9 @@ namespace VF.Feature {
                 if (inject == null) continue;
                 if (inject.sourceObject == null) continue;
                 if (string.IsNullOrWhiteSpace(inject.sourceParam)) continue;
+                if (string.IsNullOrWhiteSpace(inject.targetParam)) continue;
                 var resolvedParam = RewriteParamName(inject.targetParam);
-                if (resolvedParam == null) continue;
+                if (string.IsNullOrWhiteSpace(resolvedParam)) continue;
                 parameterInjectService.Register(new ParameterInjectService.Request {
                     sourceObject = inject.sourceObject,
                     sourceParam = inject.sourceParam,
@@ -703,27 +705,48 @@ namespace VF.Feature {
             content.Add(adv);
 
             if (avatarObject != null) {
-                var baseObject = GetBaseObject(model, componentObject);
-                var controllers = model.controllers
-                    .Select(c => c?.controller?.Get() as AnimatorController)
-                    .NotNull()
-                    .ToList();
                 var rewrites = prop.FindPropertyRelative("rewriteBindings");
-                var warnings = VrcfAnimationDebugInfo.BuildDebugInfo(
-                    controllers,
-                    baseObject,
-                    path => RewritePath(model, path),
-                    addPathRewrite: path => {
-                        VRCFuryEditorUtils.AddToList(rewrites, entry => {
-                            entry.FindPropertyRelative("from").stringValue = path;
-                            entry.FindPropertyRelative("to").stringValue = "";
-                        });
-                    }
-                );
-
-                foreach (var warning in warnings) {
-                    content.Add(warning);
+                IVisualElementScheduledItem scheduledRefresh = null;
+                System.Action refreshWarnings = null;
+                void ScheduleRefreshWarnings() {
+                    scheduledRefresh?.Pause();
+                    scheduledRefresh = content.schedule.Execute(() => {
+                        scheduledRefresh = null;
+                        refreshWarnings?.Invoke();
+                    }).StartingIn(2000);
                 }
+                VisualElement BuildWarnings() {
+                    var warningsContainer = new VisualElement();
+                    warningsContainer.Clear();
+                    var warnings = VrcfAnimationDebugInfo.BuildDebugInfo(
+                        model.controllers
+                            .Select(c => c?.controller?.Get() as AnimatorController)
+                            .NotNull(),
+                        GetBaseObject(model, componentObject),
+                        path => RewritePath(model, path),
+                        addPathRewrite: path => {
+                            VRCFuryEditorUtils.AddToList(rewrites, entry => {
+                                entry.FindPropertyRelative("from").stringValue = path;
+                                entry.FindPropertyRelative("to").stringValue = "";
+                            });
+                            ScheduleRefreshWarnings();
+                        }
+                    );
+                    foreach (var warning in warnings) {
+                        warningsContainer.Add(warning);
+                    }
+                    warningsContainer.TrackSerializedObjectValue(
+                        prop.serializedObject,
+                        _ => ScheduleRefreshWarnings()
+                    );
+
+                    return warningsContainer;
+                }
+                content.Add(VRCFuryEditorUtils.RefreshOnTrigger(
+                    BuildWarnings,
+                    prop.serializedObject,
+                    out refreshWarnings
+                ));
             }
 
             return content;

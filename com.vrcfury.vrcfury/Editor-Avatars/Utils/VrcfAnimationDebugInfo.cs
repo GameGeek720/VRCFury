@@ -49,16 +49,13 @@ namespace VF.Utils {
                     RewritePath = rewritePath
                 };
                 foreach (var binding in debugInfo.bindings) {
-                    VFResolvedObject? resolved = null;
-                    if (binding.type != typeof(Animator)) {
-                        resolved = VFResolvedObject.Load(binding.path, context, binding.type);
-                        if (!resolved.HasValue) continue;
-                    }
-                    bindings.Add(VFBinding.From(resolved, binding));
+                    var resolved = VFResolvedObject.Load(binding.path, context, binding.type);
+                    if (!resolved.HasValue) continue;
+                    bindings.Add(VFBinding.From(resolved.Value, binding));
                 }
             }
 
-            var warnings = BuildDebugInfo(bindings, componentObject, rewritePath, true, addPathRewrite);
+            var warnings = BuildDebugInfo(bindings, componentObject, true, addPathRewrite);
 
             if (usesWdOff) {
                 warnings.Add(VRCFuryEditorUtils.Warn(
@@ -92,6 +89,17 @@ namespace VF.Utils {
                     foreach (var childStateMachine in stateMachine.stateMachines) {
                         stateMachines.Push(childStateMachine.stateMachine);
                     }
+#if VRCSDK_HAS_ANIMATOR_PLAY_AUDIO
+                    foreach (var behaviour in stateMachine.behaviours ?? Array.Empty<StateMachineBehaviour>()) {
+                        if (!(behaviour is VRCAnimatorPlayAudio playAudio)
+                            || string.IsNullOrEmpty(playAudio.SourcePath)) continue;
+                        bindings.Add(EditorCurveBinding.FloatCurve(
+                            playAudio.SourcePath,
+                            typeof(GameObject),
+                            "animatorPlayAudio"
+                        ));
+                    }
+#endif
                     foreach (var childState in stateMachine.states) {
                         var state = childState.state;
                         if (state == null) continue;
@@ -127,6 +135,7 @@ namespace VF.Utils {
                 foreach (var binding in AnimationUtility.GetCurveBindings(clip)
                              .Concat(AnimationUtility.GetObjectReferenceCurveBindings(clip))) {
                     if (binding.path == null || binding.propertyName == null || binding.type == null) continue;
+                    if (VFBinding.IsAnimatorBinding(binding)) continue;
                     bindings.Add(binding);
                 }
             }
@@ -140,7 +149,6 @@ namespace VF.Utils {
         public static List<VisualElement> BuildDebugInfo(
             IEnumerable<VFBinding> bindings,
             VFGameObject componentObject,
-            Func<string,string> rewritePath = null,
             bool isController = false,
             Action<string> addPathRewrite = null
         ) {
@@ -152,29 +160,46 @@ namespace VF.Utils {
 
             var usedBindings = new HashSet<VFBinding>();
             foreach (var binding in bindings) {
-                if (binding.type == typeof(Animator)) continue;
-                if (binding.target != null) {
-                    if (binding.target == componentObject || binding.target.IsChildOf(componentObject)) {
-                        usedBindings.Add(binding);
-                    } else {
-                        outsidePrefabBindings.Add(binding.PrettyString());
+                if (binding.IsAnimatorBinding()) continue;
+
+                var sourcePath = binding.GetStoredPath();
+                var resolvedPath = binding.GetRewrittenPath();
+                var debugPath = sourcePath + (sourcePath != resolvedPath ? " -> " + resolvedPath : "");
+                if (binding.target == null) {
+                    if (resolvedPath == null) {
+                        // binding was deleted by rules :)
+                        continue;
                     }
+                    if (IsProbablyIgnoredBinding(resolvedPath)) {
+                        // user doesn't care that this is missing :)
+                        continue;
+                    }
+                    missingBindings.Add(debugPath);
                     continue;
                 }
 
-                var path = binding.GetStoredPath();
-                if (rewritePath != null) path = rewritePath(path);
-                if (path == null) {
-                    // binding was deleted by rules :)
-                    continue;
-                }
-                if (IsProbablyIgnoredBinding(path)) {
+                usedBindings.Add(binding);
+
+                if (!binding.target.IsSameOrChildOf(componentObject)) {
+                    outsidePrefabBindings.Add(binding.PrettyString());
                     continue;
                 }
 
-                var debugPath = binding.GetStoredPath();
-                if (binding.GetStoredPath() != path) debugPath += " -> " + path;
-                missingBindings.Add(debugPath);
+                // Programmatically generated bindings target the object directly and have no unresolved path.
+                if (resolvedPath == null) continue;
+
+                var relativeTarget = resolvedPath == "" ? componentObject : componentObject.Find(resolvedPath);
+                if (relativeTarget != binding.target) {
+                    nonRewriteSafeBindings.Add(debugPath);
+                    if (binding.target == componentObject) {
+                        autofixPrefixes.Add(componentObject.GetPath(avatarObject));
+                    } else {
+                        var partInsideComponent = "/" + binding.target.GetPath(componentObject);
+                        if (resolvedPath.EndsWith(partInsideComponent)) {
+                            autofixPrefixes.Add(resolvedPath.Substring(0, resolvedPath.Length - partInsideComponent.Length));
+                        }
+                    }
+                }
             }
             
             var warnings = new List<VisualElement>();

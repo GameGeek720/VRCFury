@@ -37,6 +37,7 @@ namespace VF.Utils.Controller {
         internal static VFClip Load(AnimationClip raw, VFLoadContext context) {
             if (raw == null) return null;
             var output = new VFClip(raw);
+            context.Motions[raw] = output;
             output.curves = new Dictionary<VFBinding, FloatOrObjectCurve>();
             output.originalSourceClip = raw;
             output.changedFromOriginalSourceClip = false;
@@ -76,7 +77,7 @@ namespace VF.Utils.Controller {
                     output.changedFromOriginalSourceClip = true;
                     continue;
                 }
-                if (rawBinding.type == typeof(Animator)) {
+                if (VFBinding.IsAnimatorBinding(rawBinding)) {
                     output.curves[VFBinding.MakeAnimatorBinding(rawBinding.propertyName)] = curve;
                     continue;
                 }
@@ -86,8 +87,8 @@ namespace VF.Utils.Controller {
                     continue;
                 }
                 var binding = VFBinding.From(resolvedObject.Value, rawBinding);
-                if ((context?.AdjustRootScale ?? false)
-                    && context?.AnimatorObject != null
+                if (context.AdjustRootScale
+                    && context.AnimatorObject != null
                     && curve.IsFloat
                     && binding.target == context.AnimatorObject
                     && binding.type == typeof(Transform)
@@ -103,16 +104,20 @@ namespace VF.Utils.Controller {
         }
 
         internal override Motion Save(VFSaveContext context) {
-            if (context.TryGet(this, out var existing)) {
+            if (context.Motions.TryGetValue(this, out var existing)) {
                 return existing;
             }
             var saveBindingRoot = context.BindingRoot;
+            var clip = originalSourceClip != null
+                ? originalSourceClip.Clone()
+                : VrcfObjectFactory.Create<AnimationClip>();
+            context.Motions[this] = clip;
             if (context.ReuseSourceAssets) {
                 var reuseSource = GetUseOriginalUserClip(saveBindingRoot);
                 var savedAdditiveReferencePoseClip = additiveReferencePoseClip?.Save(context) as AnimationClip;
                 if (reuseSource != null
                     && AnimationUtility.GetAnimationClipSettings(reuseSource).additiveReferencePoseClip == savedAdditiveReferencePoseClip) {
-                    context.Add(this, reuseSource);
+                    context.Motions[this] = reuseSource;
                     return reuseSource;
                 }
             }
@@ -122,9 +127,6 @@ namespace VF.Utils.Controller {
             if (savableCurves.Length != curves.Count) {
                 changedFromOriginalSourceClip = true;
             }
-            var clip = originalSourceClip != null
-                ? originalSourceClip.Clone()
-                : VrcfObjectFactory.Create<AnimationClip>();
             clip.name = clipName ?? clip.name;
             clip.frameRate = frameRate;
 
@@ -189,17 +191,17 @@ namespace VF.Utils.Controller {
             AnimationUtility.SetAnimationClipSettings(clip, settings);
 
             context.AddNewAsset(clip);
-            context.Add(this, clip);
+            context.Motions[this] = clip;
             return clip;
         }
 
-        internal override VFMotion Clone(VFMotionCloneContext context = null) {
-            if (context == null) context = new VFMotionCloneContext();
-            if (context.TryGet(this, out var existing)) {
+        internal override VFMotion Clone(VFCloneContext context = null) {
+            if (context == null) context = new VFCloneContext();
+            if (context.Motions.TryGetValue(this, out var existing)) {
                 return existing;
             }
             var clone = new VFClip(sourceRaw as AnimationClip);
-            context.Add(this, clone);
+            context.Motions[this] = clone;
             clone.curves = curves.ToDictionary(pair => pair.Key, pair => pair.Value.Clone());
             clone.originalSourceClip = originalSourceClip;
             clone.changedFromOriginalSourceClip = changedFromOriginalSourceClip;
@@ -238,7 +240,8 @@ namespace VF.Utils.Controller {
             }
         }
 
-        internal AnimationClip GetUseOriginalUserClip(VFGameObject bindingRoot = null) {
+        internal AnimationClip GetUseOriginalUserClip(VFGameObject bindingRoot) {
+            if (bindingRoot == null) throw new ArgumentNullException(nameof(bindingRoot));
             if (changedFromOriginalSourceClip || originalSourceClip == null) {
                 return null;
             }
@@ -246,7 +249,6 @@ namespace VF.Utils.Controller {
                 if (binding.ShouldDropOnSave()) {
                     return null;
                 }
-                if (bindingRoot == null) return null;
                 if (binding.GetPath(bindingRoot) != binding.GetStoredPath()) {
                     return null;
                 }
@@ -406,14 +408,16 @@ namespace VF.Utils.Controller {
             return times.Count == 2;
         }
 
-        internal override VFMotion GetLastFrame(bool last = true) {
+        internal override VFClip FlattenToClip(VFMotionFlattenMode mode) {
             var output = Clone() as VFClip;
-            output.curves = output.curves.ToDictionary(
-                pair => pair.Key,
-                pair => (FloatOrObjectCurve)(last ? pair.Value.GetLast() : pair.Value.GetFirst())
-            );
-            output.minLength = 0;
-            output.clipName = $"{name} ({(last ? "Last" : "First")} Frame)";
+            var length = GetLengthInSeconds();
+            if (length > 0) {
+                output.curves = output.curves.ToDictionary(
+                    pair => pair.Key,
+                    pair => pair.Value.ScaleTime(1 / length)
+                );
+            }
+            output.minLength = length > 0 ? 1 : 0;
             output.changedFromOriginalSourceClip = true;
             return output;
         }
@@ -422,23 +426,8 @@ namespace VF.Utils.Controller {
             return GetLengthInSeconds() == 0 || GetAllBindings().Length == 0;
         }
 
-        internal override VFClip FlattenAll() {
-            var output = VFClip.Create(name);
-            output.CopyFrom(this);
-            return output;
-        }
-
-        internal override VFClip EvaluateMotion(float fraction) {
-            return EvaluateClip(fraction * GetLengthInSeconds());
-        }
-
-        internal IImmutableSet<VFBinding.MuscleBindingType> GetMuscleBindingTypes() {
-            return GetFloatBindings()
-                .Select(binding => binding.GetMuscleBindingType())
-                .ToImmutableHashSet();
-        }
-
-        internal VFClip EvaluateClip(float timeSeconds) {
+        internal override VFMotion EvaluateMotion(float fraction) {
+            var timeSeconds = fraction * GetLengthInSeconds();
             var output = Clone() as VFClip;
             output.name = $"{name} (sampled at {timeSeconds}s)";
             output.Rewrite(AnimationRewriter.RewriteCurve((binding, curve) => {
@@ -454,7 +443,14 @@ namespace VF.Utils.Controller {
                 }
                 return (binding, (FloatOrObjectCurve)val, true);
             }));
+            output.minLength = 0;
             return output;
+        }
+
+        internal IImmutableSet<VFBinding.MuscleBindingType> GetMuscleBindingTypes() {
+            return GetFloatBindings()
+                .Select(binding => binding.GetMuscleBindingType())
+                .ToImmutableHashSet();
         }
 
         internal void UseConstantTangents() {

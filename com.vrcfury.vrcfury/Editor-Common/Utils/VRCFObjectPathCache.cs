@@ -17,7 +17,9 @@ namespace VF.Builder {
         public static void WarmupCache(VFGameObject baseObject) {
             foreach (var obj in baseObject.GetSelfAndAllChildren()) {
                 var path = obj.GetPath();
-                pathToObject[path] = obj;
+                if (!pathToObject.ContainsKey(path)) {
+                    pathToObject[path] = obj;
+                }
                 objectToPath[obj] = path;
                 objectToParent[obj] = obj.parent;
             }
@@ -35,6 +37,7 @@ namespace VF.Builder {
 
         [CanBeNull]
         public static VFGameObject Find(VFGameObject from, string relativePath) {
+            if (relativePath == "") return from;
             if (objectToPath.TryGetValue(from, out var fromPath)) {
                 var toPath = AnimationBindingUtils.JoinPaths(fromPath, relativePath);
                 return pathToObject.TryGetValue(toPath, out var to) ? to : null;

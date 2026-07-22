@@ -177,10 +177,12 @@ namespace VF.Utils {
         private static void ProjectBindingsForRecorder(VFClip clip, VFGameObject baseObj, VFGameObject avatarObject) {
             clip.Rewrite(AnimationRewriter.RewriteBinding(binding => {
                 if (binding.target == null) return binding;
-                if (binding.target == baseObj || binding.target.IsChildOf(baseObj)) {
-                    return binding.WithPath(binding.target.GetPath(baseObj));
+                var bindingRoot = baseObj;
+                while (bindingRoot != avatarObject
+                       && !binding.target.IsSameOrChildOf(bindingRoot)) {
+                    bindingRoot = bindingRoot.parent;
                 }
-                return binding.WithPath(binding.target.GetPath(avatarObject));
+                return binding.WithPath(binding.target.GetPath(bindingRoot));
             }));
         }
     }

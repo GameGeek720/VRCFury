@@ -15,17 +15,24 @@ namespace VF.Service {
      */
     [VFService]
     internal class CleanupEmptyLayersService {
+        [VFAutowired] private readonly VFGameObject avatarObject;
         [VFAutowired] private readonly ControllersService controllers;
         [VFAutowired] private readonly ValidateBindingsService validateBindingsService;
+        private readonly HashSet<VFLayer> layersToRemove = new HashSet<VFLayer>();
+
+        public bool WouldRemove(VFLayer layer) {
+            return layersToRemove.Contains(layer);
+        }
         
         [FeatureBuilderAction(FeatureOrder.CleanupEmptyLayers)]
         public void Apply() {
+            layersToRemove.Clear();
             foreach (var c in controllers.GetAllUsedControllers()) {
                 var removedBindings = new List<string>();
 
                 // Delete bindings targeting things that don't exist
                 foreach (var clip in c.GetClips()) {
-                    if (clip.GetUseOriginalUserClip() != null) {
+                    if (clip.GetUseOriginalUserClip(avatarObject) != null) {
                         // We haven't touched this clip at all during the build so far,
                         // so go ahead and just leave it as is
                         // so the original file will be used, rather than generating a fresh copy.
@@ -55,6 +62,7 @@ namespace VF.Service {
                     var hasBehaviour = layer.HasBehaviours();
 
                     if (!hasNonEmptyClip && !hasBehaviour) {
+                        layersToRemove.Add(layer);
                         Debug.LogWarning($"Removing layer {layer.name} from {c.GetType()} because it doesn't do anything");
                         if (layer.hasDefaultState && !IsActuallyUploadingHook.Get()) {
                             layer.name += " (NO VALID ANIMATIONS)";

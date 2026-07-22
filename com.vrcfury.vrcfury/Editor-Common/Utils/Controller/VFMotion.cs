@@ -4,6 +4,11 @@ using UnityEditor.Animations;
 using UnityEngine;
 
 namespace VF.Utils.Controller {
+    internal enum VFMotionFlattenMode {
+        AllClips,
+        DefaultVisibleClips
+    }
+
     internal abstract class VFMotion {
         protected readonly Motion sourceRaw;
 
@@ -12,9 +17,10 @@ namespace VF.Utils.Controller {
         }
 
         internal static VFMotion Load(Motion raw, VFLoadContext context) {
-            raw = context?.RewriteMotion?.Invoke(raw) ?? raw;
+            if (context == null) throw new ArgumentNullException(nameof(context));
+            raw = context.RewriteMotion?.Invoke(raw) ?? raw;
             if (raw == null) return null;
-            if (context != null && context.Motions.TryGetValue(raw, out var existing)) {
+            if (context.Motions.TryGetValue(raw, out var existing)) {
                 return existing;
             }
 
@@ -26,9 +32,6 @@ namespace VF.Utils.Controller {
             } else {
                 throw new Exception($"Unsupported motion type `{raw.GetType().Name}`");
             }
-            if (context != null) {
-                context.Motions[raw] = output;
-            }
             return output;
         }
 
@@ -36,7 +39,7 @@ namespace VF.Utils.Controller {
             return sourceRaw;
         }
 
-        internal abstract VFMotion Clone(VFMotionCloneContext context = null);
+        internal abstract VFMotion Clone(VFCloneContext context = null);
 
         public Motion Save(VFGameObject bindingRoot, bool reuseSourceAssets = true) {
             if (bindingRoot == null) throw new ArgumentNullException(nameof(bindingRoot));
@@ -61,8 +64,7 @@ namespace VF.Utils.Controller {
         internal abstract bool IsStatic();
         internal abstract bool IsTwoState();
         internal abstract bool IsEmptyOrZeroLength();
-        internal abstract VFMotion GetLastFrame(bool last = true);
-        internal abstract VFClip FlattenAll();
-        internal abstract VFClip EvaluateMotion(float fraction);
+        internal abstract VFClip FlattenToClip(VFMotionFlattenMode mode);
+        internal abstract VFMotion EvaluateMotion(float fraction);
     }
 }

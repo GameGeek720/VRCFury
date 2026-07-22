@@ -28,6 +28,7 @@ namespace VF.Service {
         private ControllerManager fx => controllers.GetFx();
         [VFAutowired] private readonly ValidateBindingsService validateBindingsService;
         [VFAutowired] private readonly LayerSourceService layerSourceService;
+        [VFAutowired] private readonly CleanupEmptyLayersService cleanupEmptyLayers;
 
         [FeatureBuilderAction(FeatureOrder.LayerToTree)]
         public void Apply() {
@@ -72,6 +73,10 @@ namespace VF.Service {
             Dictionary<VFBinding, HashSet<VFLayer>> layersByBinding,
             Lazy<VFBlendTreeDirect> directTree
         ) {
+            if (cleanupEmptyLayers.WouldRemove(layer)) {
+                throw new DoNotOptimizeException("Contains no valid animations (VRCF would delete this layer during a normal upload)");
+            }
+
             // We must never optimize the defaults layer.
             // While it may seem impossible for the defaults layer to be optimized (because it shares keys
             // with other layers), it's theoretically possible for the layer to be created early with bindings
@@ -273,7 +278,7 @@ namespace VF.Service {
             if (state.motion == null) return null;
 
             if (state.motion.IsStatic()) {
-                return state.motion.GetLastFrame();
+                return state.motion.EvaluateMotion(1);
             }
 
             if (!state.motion.IsTwoState()) {
@@ -292,8 +297,8 @@ namespace VF.Service {
                 throw new DoNotOptimizeException($"{state.name} contains a tree child with a timeScale <= 0");
             }
 
-            var startMotion = state.motion.GetLastFrame(false);
-            var endMotion = state.motion.GetLastFrame(true);
+            var startMotion = state.motion.EvaluateMotion(0);
+            var endMotion = state.motion.EvaluateMotion(1);
 
             if (state.timeParameterActive) {
                 // TODO: This could also break if the animation tangents are not linear

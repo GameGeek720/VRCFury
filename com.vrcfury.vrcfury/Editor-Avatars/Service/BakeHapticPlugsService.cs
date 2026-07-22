@@ -79,7 +79,10 @@ namespace VF.Service {
                     bakeResults[plug] = bakeInfo;
 
                     var postBakeClip = actionClipService.LoadStateAdv("sps_postbake", plug.postBakeActions, plug.owner());
-                    restingState.ApplyClipToRestingState(postBakeClip.onClip.FlattenAll(), owner: "Post-bake clip for plug on " + plug.owner().GetPath(avatarObject));
+                    restingState.ApplyClipToRestingState(
+                        postBakeClip.onClip.EvaluateMotion(1).FlattenToClip(VFMotionFlattenMode.DefaultVisibleClips),
+                        owner: "Post-bake clip for plug on " + plug.owner().GetPath(avatarObject)
+                    );
                 } catch (Exception e) {
                     throw new ExceptionWithCause($"Failed to bake SPS Plug: {plug.owner().GetPath(avatarObject)}", e);
                 }
@@ -153,6 +156,9 @@ namespace VF.Service {
             VFClip disableRealtimeShadowsClip,
             ISet<string> usedNames
         ) {
+            var name = HapticUtils.MakeUniqueId(usedNames, bakeInfo.oscId);
+            Debug.Log("Baking haptic component in " + plug.owner().GetPath() + " as " + name);
+
             var bakeRoot = bakeInfo.bakeRoot;
             var worldSpace = bakeInfo.worldSpace;
             var renderers = bakeInfo.renderers;
@@ -160,16 +166,13 @@ namespace VF.Service {
             var worldLength = bakeInfo.worldLength;
             var localLength = worldLength / bakeRoot.worldScale.x;
             var propsToScale = new List<(UnityEngine.Component, string, float)>();
-            var worldScale = new Lazy<VFAFloat>(() => worldScaleService.GetWorldScale(bakeRoot));
+            var worldScale = new Lazy<VFAFloat>(() => worldScaleService.GetWorldScale(bakeRoot, name));
             
             globals.addOtherFeature(new ShowInFirstPerson {
                 useObjOverride = true,
                 objOverride = bakeRoot,
                 onlyIfChildOfHead = true
             });
-
-            var name = HapticUtils.MakeUniqueId(usedNames, bakeInfo.oscId);
-            Debug.Log("Baking haptic component in " + plug.owner().GetPath() + " as " + name);
             
             // Haptics
             if (HapticsToggleMenuItem.Get() && !plug.fromSpsForAll) {
