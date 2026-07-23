@@ -13,7 +13,7 @@ namespace VF.Utils.Controller {
         private AnimationClip originalSourceClip;
         private bool changedFromOriginalSourceClip;
         private bool originalSourceIsProxyClip;
-        private float minLength;
+        private float lengthInSeconds;
         private string clipName;
         private float frameRate = 60;
         private bool loopTime;
@@ -42,7 +42,7 @@ namespace VF.Utils.Controller {
             output.originalSourceClip = raw;
             output.changedFromOriginalSourceClip = false;
             output.originalSourceIsProxyClip = false;
-            output.minLength = 0;
+            output.lengthInSeconds = 0;
             output.clipName = raw.name;
             output.frameRate = raw.frameRate;
             var settings = AnimationUtility.GetAnimationClipSettings(raw);
@@ -52,7 +52,7 @@ namespace VF.Utils.Controller {
             var path = AssetDatabase.GetAssetPath(raw);
             if (string.IsNullOrEmpty(path)) {
                 output.changedFromOriginalSourceClip = true;
-            } else if (AssetDatabase.IsMainAsset(raw) && Path.GetFileName(path).StartsWith("proxy_")) {
+            } else if (raw.name.StartsWith("proxy_")) {
                 output.originalSourceIsProxyClip = true;
             }
 
@@ -71,7 +71,7 @@ namespace VF.Utils.Controller {
                     output.changedFromOriginalSourceClip = true;
                     continue;
                 }
-                output.minLength = Math.Max(output.minLength, curve.lengthInSeconds);
+                output.lengthInSeconds = Math.Max(output.lengthInSeconds, curve.lengthInSeconds);
                 if (rawBinding.path == null || rawBinding.propertyName == null || rawBinding.type == null) {
                     Debug.LogWarning($"Clip {raw.GetPathAndName()} contains an invalid binding");
                     output.changedFromOriginalSourceClip = true;
@@ -108,19 +108,20 @@ namespace VF.Utils.Controller {
                 return existing;
             }
             var saveBindingRoot = context.BindingRoot;
+            if (context.ReuseSourceAssets) {
+                var reuseSource = GetUseOriginalUserClip(saveBindingRoot);
+                if (reuseSource != null) {
+                    context.Motions[this] = reuseSource;
+                    var savedAdditiveReferencePoseClip = additiveReferencePoseClip?.Save(context) as AnimationClip;
+                    if (AnimationUtility.GetAnimationClipSettings(reuseSource).additiveReferencePoseClip == savedAdditiveReferencePoseClip) {
+                        return reuseSource;
+                    }
+                }
+            }
             var clip = originalSourceClip != null
                 ? originalSourceClip.Clone()
                 : VrcfObjectFactory.Create<AnimationClip>();
             context.Motions[this] = clip;
-            if (context.ReuseSourceAssets) {
-                var reuseSource = GetUseOriginalUserClip(saveBindingRoot);
-                var savedAdditiveReferencePoseClip = additiveReferencePoseClip?.Save(context) as AnimationClip;
-                if (reuseSource != null
-                    && AnimationUtility.GetAnimationClipSettings(reuseSource).additiveReferencePoseClip == savedAdditiveReferencePoseClip) {
-                    context.Motions[this] = reuseSource;
-                    return reuseSource;
-                }
-            }
             var savableCurves = curves
                 .Where(pair => !pair.Key.ShouldDropOnSave())
                 .ToArray();
@@ -136,7 +137,7 @@ namespace VF.Utils.Controller {
                 .Select(c => c.Value.lengthInSeconds)
                 .DefaultIfEmpty(0)
                 .Max();
-            var addLengthBinding = minLength > curveLength;
+            var addLengthBinding = lengthInSeconds > curveLength;
 #if UNITY_2022_1_OR_NEWER
             var floatCurves = savableCurves
                 .Where(pair => pair.Value.IsFloat)
@@ -145,7 +146,7 @@ namespace VF.Utils.Controller {
             if (addLengthBinding) {
                 floatCurves.Add((
                     EditorCurveBinding.FloatCurve("__vrcf_length", typeof(GameObject), "m_IsActive"),
-                    AnimationCurve.Constant(0, minLength, 0)
+                    AnimationCurve.Constant(0, lengthInSeconds, 0)
                 ));
             }
             if (floatCurves.Any()) {
@@ -158,6 +159,13 @@ namespace VF.Utils.Controller {
                 .Where(pair => !pair.Value.IsFloat)
                 .Select(pair => (pair.Key.ToEditorCurveBinding(saveBindingRoot), pair.Value.ObjectCurve))
                 .ToList();
+            foreach (var (_, curve) in objectCurves) {
+                foreach (var keyframe in curve) {
+                    if (VrcfObjectFactory.DidCreate(keyframe.value)) {
+                        context.AddOtherAsset(keyframe.value);
+                    }
+                }
+            }
             if (objectCurves.Any()) {
                 AnimationUtility.SetObjectReferenceCurves(clip,
                     objectCurves.Select(p => p.Item1).ToArray(),
@@ -178,7 +186,7 @@ namespace VF.Utils.Controller {
                 AnimationUtility.SetEditorCurve(
                     clip,
                     EditorCurveBinding.FloatCurve("__vrcf_length", typeof(GameObject), "m_IsActive"),
-                    FloatOrObjectCurve.DummyFloatCurve(minLength)
+                    FloatOrObjectCurve.DummyFloatCurve(lengthInSeconds)
                 );
             }
 #endif
@@ -206,7 +214,7 @@ namespace VF.Utils.Controller {
             clone.originalSourceClip = originalSourceClip;
             clone.changedFromOriginalSourceClip = changedFromOriginalSourceClip;
             clone.originalSourceIsProxyClip = originalSourceIsProxyClip;
-            clone.minLength = minLength;
+            clone.lengthInSeconds = lengthInSeconds;
             clone.clipName = clipName;
             clone.frameRate = frameRate;
             clone.loopTime = loopTime;
@@ -329,31 +337,29 @@ namespace VF.Utils.Controller {
         }
 
         internal void SetCurves(IEnumerable<(VFBinding, FloatOrObjectCurve)> newCurves) {
+            var longestNewCurve = 0f;
             foreach (var (binding, curve) in newCurves) {
                 changedFromOriginalSourceClip = true;
                 if (curve == null) {
                     curves.Remove(binding);
                 } else {
+                    longestNewCurve = Math.Max(longestNewCurve, curve.lengthInSeconds);
                     curves[binding] = curve.Clone();
                 }
             }
-            UpdateLengthIfLonger(GetLengthInSeconds());
+            UpdateLengthIfLonger(longestNewCurve);
         }
 
         internal void UpdateLengthIfLonger(float length) {
             var clamped = Math.Max(0, length);
-            if (clamped < minLength) return;
-            if (Math.Abs(minLength - clamped) < 0.000001f) return;
-            minLength = clamped;
+            if (clamped < lengthInSeconds) return;
+            if (Math.Abs(lengthInSeconds - clamped) < 0.000001f) return;
+            lengthInSeconds = clamped;
             changedFromOriginalSourceClip = true;
         }
 
         internal float GetLengthInSeconds() {
-            return curves
-                .Select(pair => pair.Value.lengthInSeconds)
-                .DefaultIfEmpty(0)
-                .Append(minLength)
-                .Max();
+            return lengthInSeconds;
         }
 
         internal int GetLengthInFrames() {
@@ -417,7 +423,7 @@ namespace VF.Utils.Controller {
                     pair => pair.Value.ScaleTime(1 / length)
                 );
             }
-            output.minLength = length > 0 ? 1 : 0;
+            output.lengthInSeconds = length > 0 ? 1 : 0;
             output.changedFromOriginalSourceClip = true;
             return output;
         }
@@ -443,7 +449,7 @@ namespace VF.Utils.Controller {
                 }
                 return (binding, (FloatOrObjectCurve)val, true);
             }));
-            output.minLength = 0;
+            output.lengthInSeconds = 0;
             return output;
         }
 
@@ -506,7 +512,7 @@ namespace VF.Utils.Controller {
 
         internal void Clear() {
             curves.Clear();
-            minLength = 0;
+            lengthInSeconds = 0;
             changedFromOriginalSourceClip = true;
         }
 
@@ -515,7 +521,7 @@ namespace VF.Utils.Controller {
             foreach (var (binding, curve) in clip.GetAllCurves()) {
                 curves[binding] = curve;
             }
-            minLength = Math.Max(minLength, clip.minLength);
+            lengthInSeconds = Math.Max(lengthInSeconds, clip.lengthInSeconds);
             changedFromOriginalSourceClip = true;
         }
 

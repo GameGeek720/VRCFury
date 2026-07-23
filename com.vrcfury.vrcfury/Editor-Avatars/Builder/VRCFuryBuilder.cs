@@ -48,6 +48,7 @@ namespace VF.Builder {
         }
 
         private static void Run(VFGameObject avatarObject) {
+            SaveAssetsSession.ResetWorkLogManifest();
             EditorOnlyUtils.RemoveEditorOnlyObjects(avatarObject);
 
             if (!ShouldRun(avatarObject)) {
@@ -110,6 +111,7 @@ namespace VF.Builder {
 
             var injector = VRCFuryInjectorBuilder.GetInjector(avatar);
             injector.Set("componentObject", new Func<VFGameObject>(() => currentServiceGameObject));
+            injector.GetService<ObjectPathsLookupService>().Capture(avatarObject);
 
             var globals = injector.GetService<GlobalsService>();
             globals.addOtherFeature = (feature) => AddComponent(feature, currentServiceGameObject, currentServiceNumber);
